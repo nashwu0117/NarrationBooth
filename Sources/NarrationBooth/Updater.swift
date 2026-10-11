@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 
 /// Checks GitHub Releases for a newer version: once a day at launch (quietly) and from the app menu.
-/// A newer release shows its notes and a Download button that opens the release's .dmg (or the release page).
+/// A newer release shows its notes and a Download button that opens the release's .zip (or the release page).
 enum Updater {
     static let repo = "nashwu0117/NarrationBooth"
     private static let lastCheckKey = "lastUpdateCheck"
@@ -23,7 +23,10 @@ enum Updater {
         let assets: [Asset]
 
         var version: String { tag_name.trimmingCharacters(in: CharacterSet(charactersIn: "vV")) }
-        var dmg: URL? { assets.first { $0.name.lowercased().hasSuffix(".dmg") }?.browser_download_url }
+        var download: URL? {
+            assets.first { $0.name.lowercased().hasSuffix(".zip") }?.browser_download_url
+                ?? assets.first { $0.name.lowercased().hasSuffix(".dmg") }?.browser_download_url
+        }
     }
 
     /// Quiet daily check at launch.
@@ -77,13 +80,13 @@ enum Updater {
         let notes = (rel.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         a.informativeText = T("你現在用的是 \(currentVersion)。", "You have \(currentVersion).")
             + (notes.isEmpty ? "" : "\n\n" + String(notes.prefix(900)))
-            + T("\n\n下載後打開 DMG，把 NarrationBooth 拖到「應用程式」資料夾取代舊版。",
-                "\n\nOpen the downloaded DMG and drag NarrationBooth onto Applications to replace this version.")
+            + T("\n\n下載後打開 ZIP，把 NarrationBooth 拖到「應用程式」資料夾取代舊版（第一次一樣要到「隱私權與安全性」按「強制打開」）。",
+                "\n\nUnzip the download and drag NarrationBooth into Applications to replace this version (then allow it once under Privacy & Security → Open Anyway).")
         a.addButton(withTitle: T("下載", "Download"))
         a.addButton(withTitle: T("稍後", "Later"))
         a.addButton(withTitle: T("略過這個版本", "Skip This Version"))
         switch a.runModal() {
-        case .alertFirstButtonReturn: NSWorkspace.shared.open(rel.dmg ?? rel.html_url)
+        case .alertFirstButtonReturn: NSWorkspace.shared.open(rel.download ?? rel.html_url)
         case .alertThirdButtonReturn: UserDefaults.standard.set(rel.version, forKey: skippedKey)
         default: break
         }

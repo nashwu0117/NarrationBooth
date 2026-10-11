@@ -26,21 +26,23 @@ NarrationBooth records the way editors want it:
 
 ## Download
 
-Get the latest **NarrationBooth-x.y.z.dmg** from [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest),
-open it, and drag **NarrationBooth** onto the **Applications** folder next to it.
+1. Download **NarrationBooth-x.y.z.zip** from [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest).
+2. Double-click the ZIP (Safari usually unzips it for you) and drag **NarrationBooth** into your **Applications** folder.
+3. **First launch (one time):** NarrationBooth isn't signed with an Apple developer certificate, so macOS blocks it the
+   first time.
+   - Open NarrationBooth from Applications. macOS says it can't be opened; click **Done**.
+   - Open **System Settings → Privacy & Security**, scroll down to **Security**, and next to
+     *"NarrationBooth" was blocked…* click **Open Anyway**. Confirm with your password, then click **Open Anyway** again.
 
-> **First launch (one time):** NarrationBooth isn't signed with an Apple developer certificate, so macOS blocks it the
-> first time. To allow it:
-> 1. Open NarrationBooth from Applications. macOS says it can't be opened; click **Done** (or **OK**).
-> 2. Open **System Settings → Privacy & Security**, scroll down to **Security**, and next to
->    *"NarrationBooth" was blocked…* click **Open Anyway**. Confirm with your password, then click **Open Anyway** again.
->
-> From then on it opens normally. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`)
+   From then on it opens normally. Terminal alternative: `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`
+
+> Why a ZIP and not a DMG? Recent macOS versions turn a DMG into an *Install this app?* dialog that refuses apps Apple
+> hasn't notarized ("This Mac can't verify this app, so it wasn't installed"). Dragging the app out of a ZIP avoids it.
 
 ### Updates
 
 NarrationBooth checks GitHub for a new release once a day (and from **NarrationBooth → Check for Updates…**).
-When there is one, it shows what changed and a **Download** button; open the new DMG and drag the app onto
+When there is one, it shows what changed and a **Download** button; unzip the download and drag the app into
 Applications to replace the old one. Your settings and recordings are kept.
 
 ## Requirements
@@ -65,10 +67,10 @@ The first launch asks for microphone (and, in camera mode, camera) access.
 ### Releasing (maintainers)
 
 ```bash
-Scripts/release.sh 1.1.0 "What changed"   # bump version, build, make the DMG, tag, push, publish the GitHub release
+Scripts/release.sh 1.1.0 "What changed"   # bump version, build, zip, tag, push, publish the GitHub release
 ```
 
-`Scripts/make_dmg.sh` builds `dist/NarrationBooth-<version>.dmg`. Release builds are signed ad hoc, so downloads
+`Scripts/make_zip.sh` builds `dist/NarrationBooth-<version>.zip`. Release builds are signed ad hoc, so downloads
 carry no personal certificate; users allow the app once under Privacy & Security (see *Download*).
 
 ## Writing a script
@@ -129,14 +131,18 @@ The interface is in English. Traditional Chinese is available from the **Languag
 - **重錄不會蓋掉舊的**：舊的那次會移到 `_old_takes/`。
 - **可以接著錄**：下次打開同一份稿子，會從還沒錄的那段開始。
 
-**下載安裝**：到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.dmg`，打開後把 NarrationBooth 拖到旁邊的「應用程式」資料夾。
-**第一次打開（只要一次）**：這個 App 沒有用 Apple 開發者憑證簽章，所以 macOS 第一次會擋下來：
-1. 從「應用程式」打開 NarrationBooth，出現「無法打開」時按「完成」。
-2. 打開「系統設定 → 隱私權與安全性」，往下捲到「安全性」，在「已阻擋 NarrationBooth…」旁邊按**強制打開**（或「仍要打開」），輸入密碼後再按一次**強制打開**。
+**下載安裝**：
+1. 到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.zip`。
+2. 點兩下 ZIP 解壓縮（Safari 通常會自動解開），把 NarrationBooth 拖到「應用程式」資料夾。
+3. **第一次打開（只要一次）**：這個 App 沒有用 Apple 開發者憑證簽章，所以 macOS 第一次會擋下來：
+   - 從「應用程式」打開 NarrationBooth，出現「無法打開」時按「完成」。
+   - 打開「系統設定 → 隱私權與安全性」，往下捲到「安全性」，在「已阻擋 NarrationBooth…」旁邊按**強制打開**，輸入密碼後再按一次**強制打開**。
 
-之後就能正常打開。（也可以在終端機執行 `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`）
+   之後就能正常打開。（也可以在終端機執行 `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`）
 
-**自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
+> 為什麼是 ZIP 不是 DMG？新版 macOS 打開 DMG 會跳出「要安裝此 App 嗎？」，而那個安裝視窗會直接拒絕沒經過 Apple 公證的 App（「這部 Mac 無法驗證此 App，因此沒有安裝」）。用 ZIP 自己拖進「應用程式」就不會遇到。
+
+**自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載的 ZIP 解壓縮後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
 
 介面預設英文，可以從選單「Language → 繁體中文」切換。
 
