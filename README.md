@@ -14,7 +14,8 @@ NarrationBooth records the way editors want it:
 - **One file per script block.** `VO_01a.wav`, `VO_01b.wav`… named after the block, so they drop straight into your edit.
 - **Studio format.** WAV, 48 kHz, 24-bit, mono, with no processing, no auto-gain and no noise suppression. You get exactly what the mic hears.
 - **Camera mode.** Record yourself on camera while reading. Each take also saves `VO_01a.mov` (HEVC, 4K when the camera supports it, 1080p otherwise), starting together with the WAV.
-- **Teleprompter.** Big text, one sentence per line, breath marks (`／`) highlighted, the next block shown underneath. In camera mode the text sits at the top of the screen, close to the lens.
+- **Teleprompter.** Big text, one sentence per line, breath marks (`／`) highlighted, the next block shown underneath.
+- **Eye contact in camera mode.** The window goes full screen and the script becomes a narrow, centred column right under the built-in camera, so reading looks like looking into the lens. (If you keep the window smaller, the text still shifts toward the camera.)
 - **Level meter that tells you what to do.** "Too quiet: move closer", "Clipping! Lower the input level". A green zone shows where speech peaks should land (−20 to −6 dBFS).
 - **Room-noise check.** Three seconds of silence tells you whether the room is quiet enough.
 - **Mic picker and input level**, including USB / audio-interface mics and an iPhone used as a Continuity mic or camera.
@@ -70,7 +71,8 @@ A file without any `VO_` markers also works: every paragraph becomes a block (`0
 | ⌘O | Open a script |
 | ⇧⌘O | Choose the output folder |
 
-Recordings go to `~/Downloads/<script name>_recordings/` unless you pick another folder. Each folder holds
+Pick where recordings go with the **folder button** in the top bar (remembered between launches; default `~/Downloads`).
+Each script gets its own `<script name>_recordings/` folder there, holding
 `VO_<name>.wav` (+ `.mov`), `_old_takes/` and a `session.json` with the length, peak level and clipping flag of each take.
 
 Tips: speak at your normal pace, keep peaks in the green zone, and if you stumble, just press Space twice
@@ -88,8 +90,9 @@ The interface is in English. Traditional Chinese is available from the **Languag
 
 - **一段一個檔**：`VO_01a.wav`、`VO_01b.wav`……直接用段落代號命名。
 - **錄音室規格**：WAV 48 kHz、24-bit、單聲道，不做任何處理（沒有自動增益、沒有降噪），錄到的就是麥克風聽到的。
-- **鏡頭模式**：邊看稿邊對鏡頭講，同時錄 `VO_01a.mov`（HEVC，鏡頭支援就 4K，否則 1080p），和聲音檔同時開始。
-- **提詞**：大字、一句一行，「／」換氣記號用顏色標出來，下面預告下一段；鏡頭模式下稿子在螢幕上方，眼睛比較靠近鏡頭。
+- **鏡頭模式**：邊看稿邊對鏡頭講，同時錄 `VO_01a.mov`（HEVC，鏡頭支援就 4K，否則 1080p），和聲音檔同時開始。視窗會全螢幕，稿子縮成窄欄放在鏡頭正下方，唸稿時看起來就像在看鏡頭。
+- **提詞**：大字、一句一行，「／」換氣記號用顏色標出來，下面預告下一段。
+- **選存檔位置**：上方的資料夾按鈕可以選錄音存在哪裡，會記住你的選擇（預設是「下載」）。
 - **會告訴你怎麼調的音量表**：「太小聲：靠近一點」「爆音了！調低輸入音量」，綠色區就是講話時峰值該停的位置。
 - **測環境噪音**、**選麥克風／調輸入音量**（支援 USB 麥克風、錄音介面、iPhone 當麥克風或鏡頭）。
 - **重錄不會蓋掉舊的**：舊的那次會移到 `_old_takes/`。

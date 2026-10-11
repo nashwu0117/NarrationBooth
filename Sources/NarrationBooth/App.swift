@@ -58,12 +58,21 @@ struct BoothView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            BlockList().frame(width: 280)
-            Rectangle().fill(Booth.line).frame(width: 1)
+            if !s.videoMode {
+                BlockList().frame(width: 280)
+                Rectangle().fill(Booth.line).frame(width: 1)
+            }
             VStack(spacing: 0) {
-                TopBar()
-                Rectangle().fill(Booth.line).frame(height: 1)
-                if s.blocks.isEmpty { EmptyState() } else { Prompter() }
+                if s.videoMode {
+                    // camera mode: the script comes first, right under the camera; the device bar goes below it
+                    if s.blocks.isEmpty { EmptyState() } else { CameraPrompter() }
+                    Rectangle().fill(Booth.line).frame(height: 1)
+                    TopBar()
+                } else {
+                    TopBar()
+                    Rectangle().fill(Booth.line).frame(height: 1)
+                    if s.blocks.isEmpty { EmptyState() } else { Prompter() }
+                }
                 Rectangle().fill(Booth.line).frame(height: 1)
                 MeterPanel()
                 Controls()
@@ -73,6 +82,92 @@ struct BoothView: View {
         .foregroundStyle(Booth.text)
         .preferredColorScheme(.dark)
     }
+}
+
+/// Camera mode = teleprompter layout. The window goes full screen so its centre is the camera's centre; the current
+/// block is a narrow, centred column at the very top, just under the lens, so reading looks like eye contact.
+struct CameraPrompter: View {
+    @EnvironmentObject var s: Session
+    @EnvironmentObject var rec: Recorder
+    /// horizontal shift that puts the text column under the screen's centre (= the built-in camera), even when the
+    /// window isn't full screen or sits off-centre; 0 in full screen
+    @State private var towardCamera: CGFloat = 0
+
+    var body: some View {
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 16) {
+                if let b = s.current {
+                    HStack(spacing: 8) {
+                        Text("VO_\(b.id)").font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(rec.isRecording ? Booth.red : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                        if rec.isRecording {
+                            Text(String(format: T("● 錄影中  %.1f 秒", "● REC  %.1f s"), rec.takeSeconds))
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Booth.red)
+                        } else if s.takes[b.id] != nil {
+                            Text(T("已錄 ✓（空白鍵重錄）", "Recorded ✓ (Space to redo)")).font(.system(size: 12)).foregroundStyle(Booth.green)
+                        }
+                    }
+                    VStack(spacing: 10) {
+                        ForEach(Array(b.lines.enumerated()), id: \.offset) { _, line in
+                            breathText(line).font(.system(size: 30, weight: .medium)).lineSpacing(6)
+                                .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .frame(maxWidth: 620)
+                }
+                if s.index + 1 < s.blocks.count {
+                    Text(s.blocks[s.index + 1].lines.joined(separator: " ").replacingOccurrences(of: " ／ ", with: "  ")
+                            .replacingOccurrences(of: "／", with: " "))
+                        .font(.system(size: 15)).foregroundStyle(Booth.dim).multilineTextAlignment(.center)
+                        .lineLimit(2).frame(maxWidth: 620)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 30)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .offset(x: towardCamera)
+
+            CameraPreview(session: rec.session)
+                .frame(width: 240, height: 135)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(rec.isRecording ? Booth.red : Booth.line, lineWidth: 2))
+                .padding(18)
+        }
+        .onAppear(perform: alignToCamera)
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didMoveNotification)) { _ in alignToCamera() }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didResizeNotification)) { _ in alignToCamera() }
+        .overlay(alignment: .topLeading) {
+            Text(T("看鏡頭：字在鏡頭正下方", "Look here: the text sits right under the camera"))
+                .font(.system(size: 11)).foregroundStyle(Booth.dim).padding(10)
+        }
+    }
+}
+
+extension CameraPrompter {
+    func alignToCamera() {
+        guard let w = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }), let screen = w.screen else { return }
+        let shift = screen.frame.midX - w.frame.midX
+        // keep the column inside the window
+        let limit = max(0, w.frame.width / 2 - 340)
+        towardCamera = max(-limit, min(limit, shift))
+    }
+}
+
+extension URL {
+    /// ~/Downloads/x instead of /Users/name/Downloads/x
+    var abbreviatedPath: String { (path as NSString).abbreviatingWithTildeInPath }
+}
+
+/// 「／」 = breath mark, shown in amber
+func breathText(_ line: String) -> Text {
+    let parts = line.components(separatedBy: "／")
+    var t = Text("")
+    for (i, p) in parts.enumerated() {
+        if i > 0 { t = t + Text(" ／ ").foregroundColor(Booth.amber) }
+        t = t + Text(p.trimmingCharacters(in: .whitespaces))
+    }
+    return t
 }
 
 struct TopBar: View {
@@ -115,6 +210,12 @@ struct TopBar: View {
                 Button { s.refreshDevices() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.borderless).help(T("重新整理裝置清單", "Refresh devices"))
                 Spacer()
+                Button { s.chooseOutDir() } label: {
+                    Label((s.outDir ?? s.outputBase).abbreviatedPath, systemImage: "folder")
+                        .lineLimit(1).truncationMode(.head).frame(maxWidth: 280, alignment: .leading)
+                }
+                .help(T("錄音存在：", "Saving to: ") + (s.outDir ?? s.outputBase).abbreviatedPath + T("（點一下換位置）", " (click to change)"))
+                .disabled(rec.isRecording)
                 Text(formatLabel).font(.system(size: 11, design: .monospaced)).foregroundStyle(Booth.dim).lineLimit(1)
             }
         }
@@ -271,16 +372,6 @@ struct CurrentCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(rec.isRecording ? Booth.red : Booth.line, lineWidth: rec.isRecording ? 2 : 1))
     }
 
-    /// 「／」 (or "/") = breath mark, shown in amber
-    func breathText(_ line: String) -> Text {
-        let parts = line.components(separatedBy: CharacterSet(charactersIn: "／"))
-        var t = Text("")
-        for (i, p) in parts.enumerated() {
-            if i > 0 { t = t + Text(" ／ ").foregroundColor(Booth.amber) }
-            t = t + Text(p.trimmingCharacters(in: .whitespaces))
-        }
-        return t
-    }
 }
 
 struct Ghost: View {

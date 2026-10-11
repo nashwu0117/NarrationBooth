@@ -35,6 +35,8 @@ final class Session: ObservableObject {
     @Published var message: String?
 
     let rec = Recorder()
+    private var enteredFullScreen = false
+    private var mainWindow: NSWindow? { NSApp.windows.first { $0.isVisible && $0.canBecomeMain } }
 
     var current: ScriptBlock? { blocks.indices.contains(index) ? blocks[index] : nil }
     var doneCount: Int { blocks.filter { takes[$0.id] != nil }.count }
@@ -90,6 +92,8 @@ final class Session: ObservableObject {
         if mode == .audio {
             rec.mode = .audio
             rec.setVideo(cameraUID: nil)
+            if enteredFullScreen, let w = mainWindow, w.styleMask.contains(.fullScreen) { w.toggleFullScreen(nil) }
+            enteredFullScreen = false
             return
         }
         AVCaptureDevice.requestAccess(for: .video) { ok in
@@ -102,6 +106,11 @@ final class Session: ObservableObject {
                 self.refreshDevices()
                 self.rec.mode = .video
                 self.rec.setVideo(cameraUID: self.cameraUID)
+                // full screen puts the window's centre (and the script) right under the built-in camera
+                if let w = self.mainWindow, !w.styleMask.contains(.fullScreen) {
+                    w.toggleFullScreen(nil)
+                    self.enteredFullScreen = true
+                }
             }
         }
     }
@@ -134,18 +143,35 @@ final class Session: ObservableObject {
         }
         blocks = b
         scriptName = url.deletingPathExtension().lastPathComponent
-        let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
-        setOutDir(downloads.appendingPathComponent(scriptName + T("_錄音", "_recordings"), isDirectory: true))
+        setOutDir(outputBase.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
         message = nil
     }
 
+    /// Where recordings go: <output base>/<script name>_recordings/. The base is remembered between launches
+    /// (default: ~/Downloads).
+    @Published var outputBase: URL = {
+        if let p = UserDefaults.standard.string(forKey: "outputBase"), FileManager.default.fileExists(atPath: p) {
+            return URL(fileURLWithPath: p, isDirectory: true)
+        }
+        return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
+    }()
+
     func chooseOutDir() {
+        guard !rec.isRecording else { return }
         let p = NSOpenPanel()
         p.canChooseDirectories = true
         p.canChooseFiles = false
         p.canCreateDirectories = true
-        p.message = T("錄好的檔案要存在哪個資料夾？", "Where should the recordings go?")
-        if p.runModal() == .OK, let url = p.url { setOutDir(url) }
+        p.directoryURL = outputBase
+        p.prompt = T("存在這裡", "Save here")
+        p.message = T("選一個資料夾：每份稿子會在裡面建一個「稿子名_recordings」資料夾",
+                      "Pick a folder. Each script gets its own \"<script>_recordings\" folder inside it.")
+        guard p.runModal() == .OK, let url = p.url else { return }
+        outputBase = url
+        UserDefaults.standard.set(url.path, forKey: "outputBase")
+        if !scriptName.isEmpty {
+            setOutDir(url.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
+        }
     }
 
     private func setOutDir(_ url: URL) {
