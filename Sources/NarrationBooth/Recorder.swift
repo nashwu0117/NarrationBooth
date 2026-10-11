@@ -1,0 +1,262 @@
+import AVFoundation
+import Combine
+import CoreAudio
+
+/// Mic capture with AVCaptureSession (input-only, so a missing/odd output device can't stop it — AVAudioEngine did).
+/// Live meter + takes written as 48 kHz / 24-bit / mono WAV. No voice processing, no AGC, no compression: the file is
+/// exactly what the mic hears. The capture output delivers 48 kHz mono float; the file stores 24-bit integer PCM.
+final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate,
+                      AVCaptureFileOutputRecordingDelegate {
+    enum Mode: String, CaseIterable { case audio, video }
+    // meter (dBFS), published on the main thread ~20×/s
+    @Published var rmsDB: Float = -120
+    @Published var peakDB: Float = -120
+    @Published var peakHoldDB: Float = -120
+    // current take
+    @Published var isRecording = false
+    @Published var takeSeconds: Double = 0
+    @Published var takePeakDB: Float = -120
+    @Published var clipped = false
+    // device / status
+    @Published var running = false
+    @Published var deviceRate: Double = 48_000
+    @Published var errorText: String?
+    @Published var noiseFloorDB: Float?
+    @Published var measuringNoise = false
+    // camera (video mode)
+    @Published var mode: Mode = .audio
+    @Published var videoLabel = ""
+
+    private var videoInput: AVCaptureDeviceInput?
+    private let movieOutput = AVCaptureMovieFileOutput()
+
+    static let fileRate: Double = 48_000
+    let session = AVCaptureSession()
+    private let output = AVCaptureAudioDataOutput()
+    private let queue = DispatchQueue(label: "booth.audio")
+    private let fileFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Recorder.fileRate, channels: 1,
+                                           interleaved: false)!
+    private let lock = NSLock()
+    private var file: AVAudioFile?            // guarded by lock (written on the capture queue)
+    private var framesWritten: AVAudioFramePosition = 0
+    private var holdUntil = Date.distantPast
+    private var lastPublish = Date.distantPast
+    private var noiseSamples: [Float] = []
+    private var player: AVAudioPlayer?
+
+    override init() {
+        super.init()
+        output.audioSettings = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Recorder.fileRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsNonInterleaved: false,
+            AVLinearPCMIsBigEndianKey: false,
+        ]
+        output.setSampleBufferDelegate(self, queue: queue)
+    }
+
+    // MARK: session
+
+    static func microphones() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone, .external], mediaType: .audio, position: .unspecified).devices
+    }
+
+    static func cameras() -> [AVCaptureDevice] {
+        AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInWideAngleCamera, .external, .continuityCamera, .deskViewCamera],
+                                         mediaType: .video, position: .unspecified).devices
+    }
+
+    /// Video mode on/off: adds the camera + a movie output to the same session (macOS allows the WAV data output and
+    /// the movie output side by side, so every take gets VO_x.wav for the edit and VO_x.mov for the picture).
+    func setVideo(cameraUID: String?) {
+        session.beginConfiguration()
+        if let v = videoInput { session.removeInput(v); videoInput = nil }
+        if session.outputs.contains(movieOutput) { session.removeOutput(movieOutput) }
+        guard mode == .video else {
+            session.sessionPreset = .high
+            session.commitConfiguration()
+            videoLabel = ""
+            return
+        }
+        let cam = cameraUID.flatMap { AVCaptureDevice(uniqueID: $0) } ?? Recorder.cameras().first
+        guard let cam, let input = try? AVCaptureDeviceInput(device: cam), session.canAddInput(input) else {
+            session.commitConfiguration()
+            errorText = T("抓不到鏡頭：系統設定 → 隱私權與安全性 → 相機 → 打開「NarrationBooth」",
+                          "No camera: System Settings → Privacy & Security → Camera → allow NarrationBooth")
+            return
+        }
+        session.addInput(input)
+        videoInput = input
+        for preset in [AVCaptureSession.Preset.hd4K3840x2160, .hd1920x1080, .high] where session.canSetSessionPreset(preset) {
+            session.sessionPreset = preset
+            break
+        }
+        if session.canAddOutput(movieOutput) { session.addOutput(movieOutput) }
+        if let c = movieOutput.connection(with: .video) {  // HEVC: every Apple-silicon Mac encodes it in hardware
+            movieOutput.setOutputSettings([AVVideoCodecKey: AVVideoCodecType.hevc], for: c)
+        }
+        session.commitConfiguration()
+        let d = cam.activeFormat.formatDescription.dimensions
+        videoLabel = "\(cam.localizedName) · \(d.width)×\(d.height) HEVC"
+    }
+
+    func start(deviceUID: String?) {
+        errorText = nil
+        session.beginConfiguration()
+        for i in session.inputs { session.removeInput(i) }
+        let dev = deviceUID.flatMap { AVCaptureDevice(uniqueID: $0) } ?? AVCaptureDevice.default(for: .audio)
+        guard let dev, let input = try? AVCaptureDeviceInput(device: dev), session.canAddInput(input) else {
+            session.commitConfiguration()
+            errorText = T("抓不到麥克風：請到「系統設定 → 隱私權與安全性 → 麥克風」允許「NarrationBooth」",
+                          "No microphone: System Settings → Privacy & Security → Microphone → allow NarrationBooth")
+            running = false
+            return
+        }
+        session.addInput(input)
+        if !session.outputs.contains(output), session.canAddOutput(output) { session.addOutput(output) }
+        session.commitConfiguration()
+        queue.async { [weak self] in
+            guard let self else { return }
+            if !self.session.isRunning { self.session.startRunning() }
+            let ok = self.session.isRunning
+            DispatchQueue.main.async {
+                self.running = ok
+                if !ok { self.errorText = T("麥克風啟動失敗（可能被其他 App 佔用）", "Couldn't start the microphone (in use by another app?)") }
+            }
+        }
+        deviceRate = AudioDevices.coreAudioID(uid: dev.uniqueID).map(AudioDevices.sampleRate) ?? Recorder.fileRate
+    }
+
+    func stop() {
+        if isRecording { _ = stopTake() }
+        queue.async { [weak self] in self?.session.stopRunning() }
+        running = false
+    }
+
+    // MARK: capture queue
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let n = CMSampleBufferGetNumSamples(sb)
+        guard n > 0, let buf = AVAudioPCMBuffer(pcmFormat: fileFormat, frameCapacity: AVAudioFrameCount(n)) else { return }
+        buf.frameLength = AVAudioFrameCount(n)
+        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sb, at: 0, frameCount: Int32(n),
+                                                           into: buf.mutableAudioBufferList) == noErr,
+              let data = buf.floatChannelData?[0] else { return }
+        var sum: Float = 0, pk: Float = 0
+        for i in 0..<n {
+            let v = data[i]
+            sum += v * v
+            pk = max(pk, abs(v))
+        }
+        let rms = 20 * log10(max(sqrt(sum / Float(n)), 1e-6))
+        let peak = 20 * log10(max(pk, 1e-6))
+
+        lock.lock()
+        if let f = file {
+            try? f.write(from: buf)
+            framesWritten += AVAudioFramePosition(n)
+        }
+        let written = framesWritten
+        lock.unlock()
+
+        let now = Date()
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if self.measuringNoise { self.noiseSamples.append(rms) }
+            if self.isRecording {
+                self.takePeakDB = max(self.takePeakDB, peak)
+                if peak > -0.5 { self.clipped = true }
+                self.takeSeconds = Double(written) / Recorder.fileRate
+            }
+            if peak >= self.peakHoldDB || now > self.holdUntil {
+                self.peakHoldDB = peak
+                self.holdUntil = now.addingTimeInterval(1.5)
+            }
+            if now.timeIntervalSince(self.lastPublish) > 0.045 {
+                self.rmsDB = rms
+                self.peakDB = peak
+                self.lastPublish = now
+            }
+        }
+    }
+
+    // MARK: takes
+
+    private var pendingFile: AVAudioFile?   // camera mode: the WAV starts when the movie actually starts (same t=0)
+
+    func startTake(to url: URL, movie: URL? = nil) throws {
+        let withMovie = movie != nil && mode == .video && session.outputs.contains(movieOutput)
+        let settings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: Recorder.fileRate,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 24,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+        ]
+        let f = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
+        lock.lock()
+        framesWritten = 0
+        if withMovie { pendingFile = f } else { file = f }
+        lock.unlock()
+        if withMovie, let movie { movieOutput.startRecording(to: movie, recordingDelegate: self) }
+        takePeakDB = -120
+        takeSeconds = 0
+        clipped = false
+        isRecording = true
+    }
+
+    /// Closes the file. Returns (seconds, peak dBFS, clipped).
+    @discardableResult
+    func stopTake() -> (Double, Float, Bool) {
+        if movieOutput.isRecording { movieOutput.stopRecording() }
+        lock.lock()
+        file = nil   // AVAudioFile flushes and closes when released
+        pendingFile = nil
+        let frames = framesWritten
+        lock.unlock()
+        isRecording = false
+        return (Double(frames) / Recorder.fileRate, takePeakDB, clipped)
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
+        lock.lock()
+        if let f = pendingFile { file = f; pendingFile = nil }
+        lock.unlock()
+    }
+
+    func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo url: URL, from connections: [AVCaptureConnection],
+                    error: Error?) {
+        guard let error, (error as NSError).userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool != true else { return }
+        DispatchQueue.main.async { self.errorText = T("影片沒有存好：", "Video not saved: ") + error.localizedDescription }
+    }
+
+    // MARK: noise floor test (3 s of silence)
+
+    func measureNoise() {
+        noiseSamples = []
+        noiseFloorDB = nil
+        measuringNoise = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            guard let self else { return }
+            self.measuringNoise = false
+            let s = self.noiseSamples.sorted()
+            self.noiseFloorDB = s.isEmpty ? nil : s[s.count / 2]
+        }
+    }
+
+    // MARK: playback
+
+    func play(_ url: URL) {
+        player?.stop()
+        player = try? AVAudioPlayer(contentsOf: url)
+        player?.play()
+    }
+
+    func stopPlayback() { player?.stop() }
+    var isPlaying: Bool { player?.isPlaying ?? false }
+}
