@@ -12,11 +12,17 @@ struct NarrationBoothApp: App {
                 .environmentObject(session)
                 .environmentObject(session.rec)
                 .frame(minWidth: 1100, minHeight: 720)
-                .onAppear { session.boot() }
+                .onAppear {
+                    session.boot()
+                    Updater.checkInBackgroundIfDue()
+                }
                 .onOpenURL { session.open($0) }
         }
         .windowStyle(.hiddenTitleBar)
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button(T("檢查更新…", "Check for Updates…")) { Task { await Updater.check(userInitiated: true) } }
+            }
             CommandMenu(T("語言", "Language")) {
                 Button("繁體中文") { setLanguage("zh") }
                 Button("English") { setLanguage("en") }

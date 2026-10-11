@@ -22,12 +22,27 @@ NarrationBooth records the way editors want it:
 - **Retakes never destroy anything.** Re-record a block and the old take moves to `_old_takes/`.
 - **Resumable.** Close the app and open the same script later; it picks up at the first block you haven't recorded.
 
+## Download
+
+Get the latest **NarrationBooth-x.y.z.dmg** from [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest),
+open it, and drag **NarrationBooth** onto the **Applications** folder next to it.
+
+> **First launch:** the app isn't notarized by Apple yet, so macOS will say it can't verify the developer.
+> Open it once with **right-click → Open**, or go to **System Settings → Privacy & Security** and click **Open Anyway**.
+> After that it opens normally.
+
+### Updates
+
+NarrationBooth checks GitHub for a new release once a day (and from **NarrationBooth → Check for Updates…**).
+When there is one, it shows what changed and a **Download** button; open the new DMG and drag the app onto
+Applications to replace the old one. Your settings and recordings are kept.
+
 ## Requirements
 
 - macOS 14 Sonoma or later, Apple silicon or Intel
 - Xcode 16+ or the Swift 6 toolchain (only to build it)
 
-## Build and run
+## Build from source
 
 ```bash
 git clone https://github.com/nashwu0117/NarrationBooth.git
@@ -37,8 +52,18 @@ open NarrationBooth.app
 ```
 
 `INSTALL=1 Scripts/package_app.sh` also copies the app to `/Applications`.
-The app is signed ad hoc for local use. The first launch asks for microphone (and, in camera mode, camera) access.
-If you rebuild, macOS may ask again.
+The script signs with the best identity in your keychain (Developer ID → Apple Development → ad hoc).
+The first launch asks for microphone (and, in camera mode, camera) access.
+
+### Releasing (maintainers)
+
+```bash
+Scripts/release.sh 1.1.0 "What changed"   # bump version, build, make the DMG, tag, push, publish the GitHub release
+```
+
+`Scripts/make_dmg.sh` builds `dist/NarrationBooth-<version>.dmg`. With a *Developer ID Application* certificate and a
+notarytool profile (`xcrun notarytool store-credentials narrationbooth`) it also signs, notarizes and staples the DMG,
+so it opens without the first-launch warning.
 
 ## Writing a script
 
@@ -98,7 +123,12 @@ The interface is in English. Traditional Chinese is available from the **Languag
 - **重錄不會蓋掉舊的**：舊的那次會移到 `_old_takes/`。
 - **可以接著錄**：下次打開同一份稿子，會從還沒錄的那段開始。
 
-編譯方式見上面的 *Build and run*。介面預設英文，可以從選單「Language → 繁體中文」切換。
+**下載安裝**：到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.dmg`，打開後把 NarrationBooth 拖到旁邊的「應用程式」資料夾。
+第一次打開如果出現「無法驗證開發者」，在 App 上**按右鍵 → 打開**，或到「系統設定 → 隱私權與安全性」按**仍要打開**，之後就能正常開。
+
+**自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
+
+介面預設英文，可以從選單「Language → 繁體中文」切換。
 
 ## License
 

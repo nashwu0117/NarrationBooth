@@ -48,8 +48,23 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 xattr -cr "$APP"
-codesign --force --sign - --identifier com.nashwu.narrationbooth "$APP"
-codesign --verify "$APP" && echo "OK: $APP"
+
+# Signing: APP_IDENTITY if set, else the best identity in the keychain:
+#   "Developer ID Application" (hardened runtime, notarizable) > "Apple Development" (stable local identity, so macOS
+#   keeps the mic/camera permission across rebuilds) > ad hoc.
+if [[ -z "${APP_IDENTITY:-}" ]]; then
+  APP_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)
+  [[ -z "$APP_IDENTITY" ]] && APP_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"' || true)
+fi
+ENT="$ROOT/Scripts/NarrationBooth.entitlements"
+if [[ "$APP_IDENTITY" == Developer\ ID* ]]; then
+  codesign --force --timestamp --options runtime --entitlements "$ENT" --sign "$APP_IDENTITY" "$APP"
+elif [[ -n "$APP_IDENTITY" ]]; then
+  codesign --force --entitlements "$ENT" --sign "$APP_IDENTITY" "$APP"
+else
+  codesign --force --sign - --identifier com.nashwu.narrationbooth "$APP"
+fi
+codesign --verify "$APP" && echo "OK: $APP  (signed: ${APP_IDENTITY:-ad hoc})"
 if [[ "${INSTALL:-0}" == "1" ]]; then
   rm -rf "/Applications/NarrationBooth.app"
   cp -R "$APP" /Applications/ && echo "installed: /Applications/NarrationBooth.app"
