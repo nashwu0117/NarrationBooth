@@ -7,12 +7,19 @@ struct ScriptBlock: Identifiable, Hashable {
     let lines: [String]     // one sentence per line; 「／」 marks a breath
 }
 
-/// Reads the recording sheets Claude writes (EPn_錄音專用稿.md / .txt) and plain text files.
-/// - `**VO_xxx**` or `VO_xxx` on its own line starts a block; lines after it (until the next block) are its sentences.
-/// - `# …` / `### …` lines are section headings.
-/// - Anything before the first `VO_` marker (the instructions) is skipped.
-/// - A file with no `VO_` markers at all: every paragraph (blank-line separated) becomes a block 001, 002, …
+/// Script format (full spec: docs/SCRIPT_FORMAT.md), for .txt and .md files:
+/// - `VO_<name>` on its own line (bold `**VO_<name>**` is fine) starts a block; the lines under it are its sentences.
+///   `<name>` = letters, digits, `_` or `-`; it becomes the file name VO_<name>.wav, so it must be unique.
+/// - `# Title` names the script; `##` / `###` lines are section headings (shown in the list); `//` lines are notes.
+/// - A breath mark is 「／」 or a slash with spaces around it (` / `).
+/// - Anything before the first `VO_` line is ignored (instructions, notes).
+/// - A file with no `VO_` lines at all: every paragraph (blank-line separated) becomes a block 001, 002, …
 enum ScriptParser {
+    /// Block names used more than once (they would overwrite each other's files).
+    static func duplicates(_ blocks: [ScriptBlock]) -> [String] {
+        Dictionary(grouping: blocks, by: \.id).filter { $0.value.count > 1 }.keys.sorted()
+    }
+
     static func parse(_ text: String) -> [ScriptBlock] {
         let raw = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
         let marker = try! NSRegularExpression(pattern: #"^\**\s*VO_([A-Za-z0-9_\-]+)\s*\**\s*$"#)
@@ -23,8 +30,11 @@ enum ScriptParser {
             return String(s[r])
         }
         func clean(_ line: String) -> String {
-            line.replacingOccurrences(of: "**", with: "").trimmingCharacters(in: .whitespaces)
+            line.replacingOccurrences(of: "**", with: "")
+                .replacingOccurrences(of: " / ", with: " ／ ")   // ASCII breath mark → 「／」
+                .trimmingCharacters(in: .whitespaces)
         }
+        func isNote(_ s: String) -> Bool { s.hasPrefix("//") }
 
         if raw.contains(where: { key(of: $0) != nil }) {
             var blocks: [ScriptBlock] = []
@@ -37,13 +47,14 @@ enum ScriptParser {
                 if let k = key(of: line) { flush(); curKey = k; continue }
                 let s = clean(line)
                 if s.hasPrefix("#") {
-                    let title = s.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
-                    // a new episode / section heading ends the current block
+                    // `# Title` names the whole script; `##` / `###` start a section shown in the block list
                     if curKey != nil { flush() }
-                    if !title.isEmpty, !title.hasPrefix("EP") || title.count > 4 { section = title }
+                    let level = s.prefix { $0 == "#" }.count
+                    let title = s.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+                    if level >= 2, !title.isEmpty { section = title }
                     continue
                 }
-                if s == "---" || s.isEmpty || s.hasPrefix("|") || s.hasPrefix(">") { continue }
+                if s == "---" || s.isEmpty || s.hasPrefix("|") || s.hasPrefix(">") || isNote(s) { continue }
                 if curKey != nil { curLines.append(s) }
             }
             flush()
@@ -58,7 +69,7 @@ enum ScriptParser {
         }
         for line in raw {
             let s = clean(line)
-            if s.isEmpty { flushPara() } else if !s.hasPrefix("#") { para.append(s) }
+            if s.isEmpty { flushPara() } else if !s.hasPrefix("#") && !isNote(s) { para.append(s) }
         }
         flushPara()
         return blocks

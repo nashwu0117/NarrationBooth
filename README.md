@@ -3,7 +3,8 @@
 <h1 align="center">NarrationBooth</h1>
 
 A teleprompter recorder for Mac, made for voice-over and talking-head videos (explainers, tutorials, travel vlogs).
-Open your script, read one block at a time, and every take is saved as a clean, studio-quality file that is ready to edit.
+Open your script, read it one sentence at a time (or a block, or all of it in one go), and NarrationBooth joins the takes
+into clean, studio-quality files that are ready to edit.
 
 ![NarrationBooth](docs/screenshot.jpg)
 
@@ -13,16 +14,16 @@ Recording narration with a phone voice memo works, until you edit it: one long f
 stray pauses, retakes buried in the middle, and no way of knowing your level until it's too late.
 NarrationBooth records the way editors want it:
 
-- **One file per script block.** `VO_01a.wav`, `VO_01b.wav`… named after the block, so they drop straight into your edit.
+- **Record a sentence at a time, get one file per block.** Stop after every sentence (or record a whole block, or the whole script) and the takes are trimmed and joined automatically into `VO_01a.wav`, `VO_01b.wav`… plus `<script>_full.wav`.
 - **Studio format.** WAV, 48 kHz, 24-bit, mono, with no processing, no auto-gain and no noise suppression. You get exactly what the mic hears.
 - **Camera mode.** Record yourself on camera while reading. Each take also saves `VO_01a.mov` (HEVC, 4K when the camera supports it, 1080p otherwise), starting together with the WAV.
-- **Teleprompter.** Big text, one sentence per line, breath marks (`／`) highlighted, the next block shown underneath.
+- **Teleprompter.** Big text, the current sentence highlighted, breath marks (`／`) coloured, the next line shown underneath.
 - **Eye contact in camera mode.** The window goes full screen and the script becomes a narrow, centred column right under the built-in camera, so reading looks like looking into the lens. (If you keep the window smaller, the text still shifts toward the camera.)
 - **Level meter that tells you what to do.** "Too quiet: move closer", "Clipping! Lower the input level". A green zone shows where speech peaks should land (−20 to −6 dBFS).
 - **Room-noise check.** Three seconds of silence tells you whether the room is quiet enough.
 - **Mic picker and input level**, including USB / audio-interface mics and an iPhone used as a Continuity mic or camera.
-- **Retakes never destroy anything.** Re-record a block and the old take moves to `_old_takes/`.
-- **Resumable.** Close the app and open the same script later; it picks up at the first block you haven't recorded.
+- **Retakes never destroy anything.** Re-record a sentence and the old take moves to `_old_takes/`.
+- **Resumable.** Close the app and open the same script later; it picks up at the first take you haven't recorded.
 
 ## Download
 
@@ -75,41 +76,67 @@ carry no personal certificate; users allow the app once under Privacy & Security
 
 ## Writing a script
 
-Plain `.txt` or `.md`. Mark each recording block with a line `VO_<name>` (bold is fine: `**VO_01a**`), then put
-one sentence per line underneath. Headings (`# …`) become section labels. Anything above the first `VO_` line is
-ignored, so you can keep notes there. See [`examples/sample_script.md`](examples/sample_script.md).
+Plain `.txt` or `.md`. Each `VO_<name>` line starts a block (one block = one take = `VO_<name>.wav`), with one sentence
+per line under it; ` / ` or `／` marks a breath, `##` lines are sections, `//` lines are notes.
 
-```markdown
+**Full format: [docs/SCRIPT_FORMAT.md](docs/SCRIPT_FORMAT.md)** · Template: [examples/template.txt](examples/template.txt)
+(also in the app: **Help → Save Script Template…**)
+
+```text
 ## 01 Opening
 
-**VO_01a**
-
-Hi everyone ／ welcome back to the channel.
+VO_01a
+Hi everyone / welcome back to the channel.
 Today we're looking at why the sky is blue.
 
-**VO_01b**
-
-It sounds like a simple question ／ but the answer goes all the way back to 1871.
+VO_01b
+It sounds like a simple question / but the answer goes all the way back to 1871.
 ```
-
-A file without any `VO_` markers also works: every paragraph becomes a block (`001`, `002`, …).
 
 ## Recording
 
+### Take modes
+
+Choose how much you record per take from the menu in the top bar or in **Settings (⌘,)**:
+
+| Mode | How it works |
+|---|---|
+| **One sentence per take** (default) | Read a sentence, press Space: it stops and jumps to the next sentence. A slip only costs that sentence. |
+| **One block per take** | Read a whole `VO_` block, press Space to stop and move to the next block. |
+| **Whole script in one take** | Press Space once to start, then Space after each sentence to move the prompter on. The recording never stops; after the last sentence Space ends the take (Esc stops any time). |
+
+When every take is done, NarrationBooth **combines them automatically** (or press **Combine**, ⌘J, at any time):
+`VO_<name>.wav` for each block plus `<script>_full.wav` for the whole script, and the matching `.mov` files in camera
+mode. The silence before and after each take is trimmed, and the gaps between sentences and blocks are real room tone
+you recorded, never inserted silence, so audio and video share exactly the same cuts. Gap lengths and trimming are in Settings.
+
 | Key | Action |
 |---|---|
-| Space | Start recording the current block / stop and move to the next |
-| ← → | Previous / next block |
+| Space | Record / stop and move to the next take (whole-script mode: next sentence) |
+| Esc | Stop the current take |
+| ← → | Previous / next take |
 | P | Play the current take |
+| ⌘J | Combine takes now |
 | ⌘O | Open a script |
 | ⇧⌘O | Choose the output folder |
 
-Pick where recordings go with the **folder button** in the top bar (remembered between launches; default `~/Downloads`).
-Each script gets its own `<script name>_recordings/` folder there, holding
-`VO_<name>.wav` (+ `.mov`), `_old_takes/` and a `session.json` with the length, peak level and clipping flag of each take.
+### Where files go
 
-Tips: speak at your normal pace, keep peaks in the green zone, and if you stumble, just press Space twice
-(stop, then record again) to redo that block.
+Pick where recordings go with the **folder button** in the top bar (remembered between launches; default `~/Downloads`).
+Each script gets its own folder:
+
+```text
+<output folder>/<script name>_recordings/
+├── VO_01a.wav             combined block (WAV 48 kHz, 24-bit, mono, unprocessed)
+├── VO_01a.mov             camera mode only
+├── <script name>_full.wav the whole script joined
+├── takes/                 raw takes: VO_01a_1.wav (sentence), VO_01a.wav (block) or FULL.wav (whole script)
+├── _old_takes/            earlier takes of anything you re-recorded (never deleted)
+└── session.json           length, peak level and clipping flag of each take
+```
+
+Tips: speak at your normal pace, keep peaks in the green zone, and if you stumble, press Space twice
+(stop, then record again) to redo that take. Re-recording one sentence and combining again is enough.
 
 ## Language
 
@@ -119,9 +146,13 @@ The interface is in English. Traditional Chinese is available from the **Languag
 
 ## 中文說明
 
-給 Mac 用的提詞錄音工具，適合錄旁白和真人出鏡的知識型影片。打開稿子，一段一段唸，每段都存成可以直接剪的高音質檔案。
+給 Mac 用的提詞錄音工具，適合錄旁白和真人出鏡的知識型影片。打開稿子，一句一句（或一段一段、整份一次）唸，錄完自動接成可以直接剪的高音質檔案。
 
-- **一段一個檔**：`VO_01a.wav`、`VO_01b.wav`……直接用段落代號命名。
+- **三種錄法**（上方選單或「設定」⌘, 切換）：
+  - **一句一錄**（預設）：唸完一句按空白鍵就停，自動跳下一句，唸錯只要重錄那一句。
+  - **一段一錄**：每個 `VO_` 段落錄一次。
+  - **整份一次錄**：按一次開始，每唸完一句按空白鍵換下一句，錄音不中斷，最後一句再按一次結束（Esc 隨時可停）。
+- **全部錄完自動合併**：每段一個 `VO_01a.wav`，再加上整份的 `<稿子名>_full.wav`（鏡頭模式也會合併 `.mov`）。會修掉每次錄音前後多餘的空白，句子之間的間隔用的是你錄到的真實環境音，聲音和影片用同樣的剪點不會跑掉。也可以隨時按「合併」（⌘J）。原始錄音留在 `takes/` 資料夾。
 - **錄音室規格**：WAV 48 kHz、24-bit、單聲道，不做任何處理（沒有自動增益、沒有降噪），錄到的就是麥克風聽到的。
 - **鏡頭模式**：邊看稿邊對鏡頭講，同時錄 `VO_01a.mov`（HEVC，鏡頭支援就 4K，否則 1080p），和聲音檔同時開始。視窗會全螢幕，稿子縮成窄欄放在鏡頭正下方，唸稿時看起來就像在看鏡頭。
 - **提詞**：大字、一句一行，「／」換氣記號用顏色標出來，下面預告下一段。
@@ -129,7 +160,7 @@ The interface is in English. Traditional Chinese is available from the **Languag
 - **會告訴你怎麼調的音量表**：「太小聲：靠近一點」「爆音了！調低輸入音量」，綠色區就是講話時峰值該停的位置。
 - **測環境噪音**、**選麥克風／調輸入音量**（支援 USB 麥克風、錄音介面、iPhone 當麥克風或鏡頭）。
 - **重錄不會蓋掉舊的**：舊的那次會移到 `_old_takes/`。
-- **可以接著錄**：下次打開同一份稿子，會從還沒錄的那段開始。
+- **可以接著錄**：下次打開同一份稿子，會從還沒錄的那句開始。
 
 **下載安裝**：
 1. 到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.zip`。
@@ -143,6 +174,8 @@ The interface is in English. Traditional Chinese is available from the **Languag
 > 為什麼是 ZIP 不是 DMG？新版 macOS 打開 DMG 會跳出「要安裝此 App 嗎？」，而那個安裝視窗會直接拒絕沒經過 Apple 公證的 App（「這部 Mac 無法驗證此 App，因此沒有安裝」）。用 ZIP 自己拖進「應用程式」就不會遇到。
 
 **自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載的 ZIP 解壓縮後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
+
+**稿子格式**：見 [docs/SCRIPT_FORMAT.md](docs/SCRIPT_FORMAT.md)（有中文說明），範本在 [examples/template.txt](examples/template.txt)，App 選單 Help → Save Script Template… 也能存一份。
 
 介面預設英文，可以從選單「Language → 繁體中文」切換。
 

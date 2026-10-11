@@ -23,6 +23,13 @@ struct NarrationBoothApp: App {
             CommandGroup(after: .appInfo) {
                 Button(T("檢查更新…", "Check for Updates…")) { Task { await Updater.check(userInitiated: true) } }
             }
+            CommandGroup(after: .saveItem) {
+                Button(T("合併錄音", "Combine Takes")) { Task { await session.combine() } }.keyboardShortcut("j")
+            }
+            CommandGroup(replacing: .help) {
+                Button(T("稿子格式說明", "Script Format Guide")) { NSWorkspace.shared.open(ScriptTemplate.guideURL) }
+                Button(T("存一份稿子範本…", "Save Script Template…")) { session.saveTemplate() }
+            }
             CommandMenu(T("語言", "Language")) {
                 Button("繁體中文") { setLanguage("zh") }
                 Button("English") { setLanguage("en") }
@@ -32,6 +39,7 @@ struct NarrationBoothApp: App {
                 Button(T("選擇存檔資料夾…", "Choose Output Folder…")) { session.chooseOutDir() }.keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
+        Settings { SettingsView() }
     }
 }
 
@@ -102,7 +110,8 @@ struct CameraPrompter: View {
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             VStack(spacing: 16) {
-                if let b = s.current {
+                if let sh = s.shown {
+                    let b = s.blocks[sh.block]
                     HStack(spacing: 8) {
                         Text("VO_\(b.id)").font(.system(size: 12, weight: .bold, design: .monospaced))
                             .padding(.horizontal, 7).padding(.vertical, 2)
@@ -110,22 +119,22 @@ struct CameraPrompter: View {
                         if rec.isRecording {
                             Text(String(format: T("● 錄影中  %.1f 秒", "● REC  %.1f s"), rec.takeSeconds))
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced)).foregroundStyle(Booth.red)
-                        } else if s.takes[b.id] != nil {
+                        } else if s.unit != .script, s.shownTake != nil {
                             Text(T("已錄 ✓（空白鍵重錄）", "Recorded ✓ (Space to redo)")).font(.system(size: 12)).foregroundStyle(Booth.green)
                         }
                     }
                     VStack(spacing: 10) {
-                        ForEach(Array(b.lines.enumerated()), id: \.offset) { _, line in
-                            breathText(line).font(.system(size: 30, weight: .medium)).lineSpacing(6)
+                        ForEach(Array(b.lines.enumerated()), id: \.offset) { i, line in
+                            let on = sh.line == nil || sh.line == i
+                            breathText(line).font(.system(size: on ? 30 : 20, weight: .medium)).lineSpacing(6)
+                                .opacity(on ? 1 : 0.32)
                                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .frame(maxWidth: 620)
                 }
-                if s.index + 1 < s.blocks.count {
-                    Text(s.blocks[s.index + 1].lines.joined(separator: " ").replacingOccurrences(of: " ／ ", with: "  ")
-                            .replacingOccurrences(of: "／", with: " "))
-                        .font(.system(size: 15)).foregroundStyle(Booth.dim).multilineTextAlignment(.center)
+                if let n = s.nextPreview {
+                    Text(n).font(.system(size: 15)).foregroundStyle(Booth.dim).multilineTextAlignment(.center)
                         .lineLimit(2).frame(maxWidth: 620)
                 }
                 Spacer(minLength: 0)
@@ -179,6 +188,7 @@ func breathText(_ line: String) -> Text {
 struct TopBar: View {
     @EnvironmentObject var s: Session
     @EnvironmentObject var rec: Recorder
+    @ObservedObject var prefs = Prefs.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -188,6 +198,19 @@ struct TopBar: View {
                 Text(s.scriptName.isEmpty ? T("還沒開啟稿子", "No script yet") : s.scriptName)
                     .font(.system(size: 13, weight: .semibold)).lineLimit(1)
                 Spacer()
+                Menu {
+                    Picker("", selection: $prefs.unit) {
+                        ForEach(TakeUnit.allCases) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.inline)
+                    Divider()
+                    SettingsLink { Text(T("更多設定…", "More Settings…")) }
+                } label: {
+                    Label(prefs.unit.title, systemImage: "rectangle.split.3x1")
+                }
+                .menuStyle(.borderlessButton).fixedSize()
+                .disabled(rec.isRecording)
+                .help(T("每次錄一句、一段，或整份一次錄", "Record a sentence, a block, or the whole script per take"))
                 Picker("", selection: Binding(get: { rec.mode }, set: { s.setMode($0) })) {
                     Label(T("只錄聲音", "Voice only"), systemImage: "waveform").tag(Recorder.Mode.audio)
                     Label(T("鏡頭＋聲音", "Camera + voice"), systemImage: "video").tag(Recorder.Mode.video)
@@ -240,14 +263,15 @@ struct TopBar: View {
 
 struct BlockList: View {
     @EnvironmentObject var s: Session
+    @ObservedObject var prefs = Prefs.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(T("段落", "Takes")).font(.system(size: 11, weight: .semibold)).foregroundStyle(Booth.dim)
-                if !s.blocks.isEmpty {
-                    ProgressView(value: Double(s.doneCount), total: Double(s.blocks.count)).tint(Booth.green)
-                    Text(T("錄好 \(s.doneCount) / \(s.blocks.count)", "Recorded \(s.doneCount) / \(s.blocks.count)"))
+                Text(prefs.unit.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Booth.dim)
+                if !s.slots.isEmpty {
+                    ProgressView(value: Double(s.doneCount), total: Double(s.slots.count)).tint(Booth.green)
+                    Text(T("錄好 \(s.doneCount) / \(s.slots.count)", "Recorded \(s.doneCount) / \(s.slots.count)"))
                         .font(.system(size: 12, design: .monospaced))
                 }
             }
@@ -260,14 +284,15 @@ struct BlockList: View {
                                 Text(b.section).font(.system(size: 11, weight: .semibold)).foregroundStyle(Booth.dim)
                                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 4)
                             }
-                            BlockRow(block: b, selected: i == s.index, take: s.takes[b.id])
+                            BlockRow(block: b, selected: s.shown?.block == i, progress: s.progress(ofBlock: i),
+                                     clipped: s.anyClipped(inBlock: i))
                                 .id(b.id)
-                                .onTapGesture { if !s.rec.isRecording { s.index = i } }
+                                .onTapGesture { s.select(block: i) }
                         }
                     }
                 }
-                .onChange(of: s.index) { _, i in
-                    if s.blocks.indices.contains(i) { withAnimation { proxy.scrollTo(s.blocks[i].id, anchor: .center) } }
+                .onChange(of: s.shown?.block) { _, i in
+                    if let i, s.blocks.indices.contains(i) { withAnimation { proxy.scrollTo(s.blocks[i].id, anchor: .center) } }
                 }
             }
             if s.outDir != nil {
@@ -284,21 +309,29 @@ struct BlockList: View {
 struct BlockRow: View {
     let block: ScriptBlock
     let selected: Bool
-    let take: TakeInfo?
+    let progress: (done: Int, total: Int)
+    let clipped: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Group {
-                if let t = take {
-                    Image(systemName: t.clipped ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
-                        .foregroundStyle(t.clipped ? Booth.amber : Booth.green)
+                if progress.done == progress.total {
+                    Image(systemName: clipped ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                        .foregroundStyle(clipped ? Booth.amber : Booth.green)
+                } else if progress.done > 0 {
+                    Image(systemName: "circle.lefthalf.filled").foregroundStyle(Booth.green)
                 } else {
                     Image(systemName: "circle").foregroundStyle(Booth.dim)
                 }
             }
             .font(.system(size: 12)).padding(.top, 2)
             VStack(alignment: .leading, spacing: 2) {
-                Text("VO_\(block.id)").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                HStack(spacing: 6) {
+                    Text("VO_\(block.id)").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    if progress.total > 1 {
+                        Text("\(progress.done)/\(progress.total)").font(.system(size: 10, design: .monospaced)).foregroundStyle(Booth.dim)
+                    }
+                }
                 Text(block.lines.first ?? "").font(.system(size: 12)).foregroundStyle(Booth.dim).lineLimit(1)
             }
         }
@@ -317,26 +350,15 @@ struct Prompter: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // the current block sits at the top, close to the camera, so the eyes stay near the lens
-            HStack(alignment: .top, spacing: 16) {
-                if let b = s.current { CurrentCard(block: b) }
-                if s.videoMode {
-                    CameraPreview(session: rec.session)
-                        .frame(width: 288, height: 162)
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(alignment: .topLeading) {
-                            if rec.isRecording {
-                                Text("● REC").font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .padding(.horizontal, 6).padding(.vertical, 3)
-                                    .background(Booth.red, in: RoundedRectangle(cornerRadius: 4)).padding(8)
-                            }
-                        }
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(rec.isRecording ? Booth.red : Booth.line, lineWidth: 2))
+            if let sh = s.shown { CurrentCard(block: s.blocks[sh.block], highlight: sh.line) }
+            if let n = s.nextPreview {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(T("下一句", "Next")).font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Text(n).font(.system(size: 17)).lineLimit(2)
                 }
+                .foregroundStyle(Booth.dim).padding(.horizontal, 24).frame(maxWidth: 680, alignment: .leading)
             }
-            if s.index + 1 < s.blocks.count { Ghost(block: s.blocks[s.index + 1], label: T("下一段", "Next")) }
             Spacer(minLength: 0)
-            if s.index > 0 { Ghost(block: s.blocks[s.index - 1], label: T("上一段", "Previous")) }
         }
         .padding(.horizontal, 28).padding(.vertical, 20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -348,17 +370,19 @@ struct CurrentCard: View {
     @EnvironmentObject var s: Session
     @EnvironmentObject var rec: Recorder
     let block: ScriptBlock
+    let highlight: Int?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Text("VO_\(block.id)").font(.system(size: 13, weight: .bold, design: .monospaced))
+                Text("VO_\(block.id)" + (highlight.map { " · \($0 + 1)/\(block.lines.count)" } ?? ""))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(rec.isRecording ? Booth.red : Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
                 if rec.isRecording {
                     Text(String(format: T("● 錄音中  %.1f 秒", "● Recording  %.1f s"), rec.takeSeconds))
                         .font(.system(size: 13, weight: .semibold, design: .monospaced)).foregroundStyle(Booth.red)
-                } else if let t = s.takes[block.id] {
+                } else if s.unit != .script, let t = s.shownTake {
                     Text(String(format: T("已錄 %.1f 秒 · 最大 %.0f dB", "Recorded %.1f s · peak %.0f dB"), t.seconds, t.peakDB)
                          + (t.clipped ? T(" · 有爆音，建議重錄", " · clipped, re-record") : ""))
                         .font(.system(size: 12, design: .monospaced))
@@ -367,8 +391,10 @@ struct CurrentCard: View {
                 Spacer()
                 Text(block.section).font(.system(size: 12)).foregroundStyle(Booth.dim)
             }
-            ForEach(Array(block.lines.enumerated()), id: \.offset) { _, line in
-                breathText(line).font(.system(size: s.videoMode ? 30 : 34, weight: .medium)).lineSpacing(8)
+            ForEach(Array(block.lines.enumerated()), id: \.offset) { i, line in
+                let on = highlight == nil || highlight == i
+                breathText(line).font(.system(size: on ? (s.videoMode ? 30 : 34) : 22, weight: .medium)).lineSpacing(8)
+                    .opacity(on ? 1 : 0.32)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -376,22 +402,6 @@ struct CurrentCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Booth.panel, in: RoundedRectangle(cornerRadius: 14))
         .overlay(RoundedRectangle(cornerRadius: 14).stroke(rec.isRecording ? Booth.red : Booth.line, lineWidth: rec.isRecording ? 2 : 1))
-    }
-
-}
-
-struct Ghost: View {
-    let block: ScriptBlock
-    let label: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(label) · VO_\(block.id)").font(.system(size: 11, weight: .semibold, design: .monospaced))
-            Text(block.lines.joined(separator: " ").replacingOccurrences(of: " ／ ", with: "  ").replacingOccurrences(of: "／", with: " "))
-                .font(.system(size: 17)).lineLimit(2)
-        }
-        .foregroundStyle(Booth.dim)
-        .padding(.horizontal, 24)
-        .frame(maxWidth: 640, alignment: .leading)
     }
 }
 
@@ -420,17 +430,57 @@ struct CameraPreview: NSViewRepresentable {
 
 struct EmptyState: View {
     @EnvironmentObject var s: Session
+
+    private let example = """
+    ## 01 Opening
+
+    VO_01a
+    Hi everyone / welcome back to the channel.
+    Today we're looking at why the sky is blue.
+
+    VO_01b
+    It sounds like a simple question / but ...
+    """
+
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "waveform.badge.mic").font(.system(size: 44)).foregroundStyle(Booth.dim)
+            Image(systemName: "waveform.badge.mic").font(.system(size: 40)).foregroundStyle(Booth.dim)
             Text(T("開啟一份稿子（.txt / .md）就可以開始錄", "Open a script (.txt / .md) to start recording"))
                 .font(.system(size: 18, weight: .medium))
-            Text(T("先看下面的音量條：對著麥克風講話，讓峰值停在綠色區", "Check the meter first: speak and keep the peaks in the green zone"))
-                .font(.system(size: 13)).foregroundStyle(Booth.dim)
-            Button(T("開啟稿子…", "Open Script…")) { s.openPanel() }.buttonStyle(.borderedProminent).tint(Booth.red).controlSize(.large)
-            if let m = s.message { Text(m).foregroundStyle(Booth.amber).font(.system(size: 13)) }
+            HStack(alignment: .top, spacing: 22) {
+                Text(example)
+                    .font(.system(size: 12, design: .monospaced)).foregroundStyle(Booth.text.opacity(0.85))
+                    .padding(14).frame(width: 330, alignment: .leading)
+                    .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(T("稿子格式", "Script format")).font(.system(size: 13, weight: .semibold))
+                    rule("VO_01a", T("一行一個 VO_名稱 開始一段（一段 = 一個錄音檔）", "a VO_name line starts a block (one block = one file)"))
+                    rule(T("一句一行", "1 line"), T("每一行是一句", "one sentence per line"))
+                    rule(" / ", T("換氣的地方（也可以用「／」）", "where to breathe (「／」 works too)"))
+                    rule("## ", T("分區標題，顯示在左邊清單", "section heading, shown in the list"))
+                    rule("// ", T("自己的備註，錄音時不會顯示", "your notes, hidden while recording"))
+                }
+                .frame(width: 330, alignment: .leading)
+            }
+            HStack(spacing: 10) {
+                Button(T("開啟稿子…", "Open Script…")) { s.openPanel() }
+                    .buttonStyle(.borderedProminent).tint(Booth.red).controlSize(.large)
+                Button(T("存一份範本", "Save a Template")) { s.saveTemplate() }.controlSize(.large)
+                Button(T("完整格式說明", "Full Format Guide")) { NSWorkspace.shared.open(ScriptTemplate.guideURL) }
+                    .buttonStyle(.link)
+            }
+            if let m = s.message { Text(m).foregroundStyle(Booth.amber).font(.system(size: 13)).multilineTextAlignment(.center) }
         }
+        .padding(24)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    func rule(_ key: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(key).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(Booth.amber)
+                .frame(width: 64, alignment: .leading)
+            Text(text).font(.system(size: 12)).foregroundStyle(Booth.dim)
+        }
     }
 }
 
@@ -525,34 +575,52 @@ struct Controls: View {
     @EnvironmentObject var rec: Recorder
 
     var recordTitle: String {
-        if rec.isRecording { return T("停止（空白鍵）→ 下一段", "Stop (Space) → next") }
-        if s.current.flatMap({ s.takes[$0.id] }) != nil { return T("重錄這段（空白鍵）", "Re-record (Space)") }
-        return T("開始錄（空白鍵）", "Record (Space)")
+        if rec.isRecording {
+            if s.unit == .script {
+                return s.cursor < s.flatLines.count - 1 ? T("下一句（空白鍵）", "Next line (Space)") : T("結束（空白鍵）", "Finish (Space)")
+            }
+            return T("停止（空白鍵）→ 下一句", "Stop (Space) → next")
+        }
+        if s.shownTake != nil { return T("重錄（空白鍵）", "Re-record (Space)") }
+        return s.unit == .script ? T("開始錄整份（空白鍵）", "Record the script (Space)") : T("開始錄（空白鍵）", "Record (Space)")
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            Button { s.go(-1) } label: { Label(T("上一段", "Previous"), systemImage: "chevron.left") }
-                .keyboardShortcut(.leftArrow, modifiers: []).disabled(rec.isRecording || s.index == 0)
-            Button { s.toggleRecord() } label: {
+        HStack(spacing: 12) {
+            Button { s.go(-1) } label: { Label(T("上一個", "Previous"), systemImage: "chevron.left") }
+                .keyboardShortcut(.leftArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
+            Button { s.space() } label: {
                 HStack(spacing: 10) {
-                    Image(systemName: rec.isRecording ? "stop.fill" : "record.circle")
+                    Image(systemName: rec.isRecording ? (s.unit == .script ? "forward.fill" : "stop.fill") : "record.circle")
                     Text(recordTitle)
                 }
-                .font(.system(size: 15, weight: .semibold)).frame(minWidth: 260).padding(.vertical, 6)
+                .font(.system(size: 15, weight: .semibold)).frame(minWidth: 220).padding(.vertical, 6)
             }
             .keyboardShortcut(.space, modifiers: [])
             .buttonStyle(.borderedProminent).tint(rec.isRecording ? Booth.red.opacity(0.85) : Booth.red)
-            .disabled(s.current == nil || !rec.running)
-            Button { s.go(1) } label: { Label(T("下一段", "Next"), systemImage: "chevron.right") }
-                .keyboardShortcut(.rightArrow, modifiers: []).disabled(rec.isRecording || s.index >= s.blocks.count - 1)
+            .disabled(s.current == nil || !rec.running || s.combining != nil)
+            Button { s.go(1) } label: { Label(T("下一個", "Next"), systemImage: "chevron.right") }
+                .keyboardShortcut(.rightArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
+            // Esc stops any take (in whole-script mode it ends the take early)
+            Button("") { s.stopRecording() }.keyboardShortcut(.escape, modifiers: []).opacity(0).frame(width: 0)
             Spacer()
-            Button { s.playCurrent() } label: { Label(T("試聽這段（P）", "Play take (P)"), systemImage: "play.circle") }
-                .keyboardShortcut("p", modifiers: [])
-                .disabled(rec.isRecording || s.current.flatMap { s.takes[$0.id] } == nil)
-            if s.doneCount == s.blocks.count, !s.blocks.isEmpty {
-                Text(T("全部錄完 ✓", "All done ✓")).font(.system(size: 13, weight: .semibold)).foregroundStyle(Booth.green)
+            if let c = s.combining {
+                ProgressView().controlSize(.small)
+                Text(c).font(.system(size: 12)).foregroundStyle(Booth.dim)
+            } else if s.doneCount > 0 {
+                // once everything is recorded and combined the button turns into the "done" badge (click to combine again)
+                let done = s.allDone && s.combinedAt != nil
+                Button { Task { await s.combine() } } label: {
+                    Label(done ? T("已合併 ✓", "Combined ✓") : T("合併（⌘J）", "Combine (⌘J)"),
+                          systemImage: done ? "checkmark.circle.fill" : "square.stack.3d.down.forward")
+                }
+                .foregroundStyle(done ? Booth.green : .primary)
+                .help(T("把錄好的句子接成每段一個檔，再加上整份的 _full 檔", "Join the takes into one file per block plus a _full file"))
+                .disabled(rec.isRecording).fixedSize()
             }
+            Button { s.playCurrent() } label: { Label(T("試聽（P）", "Play (P)"), systemImage: "play.circle") }
+                .keyboardShortcut("p", modifiers: [])
+                .disabled(rec.isRecording || s.shownTake == nil).fixedSize()
         }
         .controlSize(.large)
         .padding(.horizontal, 28).padding(.vertical, 14)

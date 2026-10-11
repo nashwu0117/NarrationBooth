@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Combine
 import CoreAudio
 import Foundation
 
@@ -14,15 +15,29 @@ struct TakeInfo: Codable, Hashable {
     var clipped: Bool
     var recordedAt: Date
     var video: Bool?
+    var markers: [Double]?   // whole-script takes: start time of every line, in script order
 }
 
-/// One recording session: a script, an output folder, and the takes recorded so far.
-/// Files: <folder>/VO_<key>.wav (+ VO_<key>.mov in camera mode) for the latest take, older takes in <folder>/_old_takes/,
-/// metadata in <folder>/session.json.
+/// One recording unit in the current take mode.
+struct TakeSlot: Identifiable, Hashable {
+    let id: String        // file stem in takes/: VO_01a_2 (sentence), VO_01a (block), FULL (whole script)
+    let blockIndex: Int
+    let line: Int?        // sentence mode: the line inside the block
+}
+
+/// One recording session: a script, an output folder, the takes recorded so far, and the combined files.
+/// Folder layout:
+///   <output>/<script>_recordings/takes/<slot>.wav (+ .mov)   raw takes
+///   <output>/<script>_recordings/_old_takes/                 earlier takes of re-recorded slots
+///   <output>/<script>_recordings/VO_<block>.wav (+ .mov)     combined, one per block
+///   <output>/<script>_recordings/<script>_full.wav (+ .mov)  combined, whole script
+///   <output>/<script>_recordings/session.json
 @MainActor
 final class Session: ObservableObject {
     @Published var blocks: [ScriptBlock] = []
-    @Published var index = 0
+    @Published var slots: [TakeSlot] = []
+    @Published var index = 0                 // current slot
+    @Published var cursor = 0                // whole-script mode: current line (flat index across the script)
     @Published var scriptName = ""
     @Published var outDir: URL?
     @Published var takes: [String: TakeInfo] = [:]
@@ -33,14 +48,71 @@ final class Session: ObservableObject {
     @Published var inputVolume: Float = 0.5
     @Published var canSetVolume = false
     @Published var message: String?
+    @Published var combining: String?        // progress text while combining
+    @Published var combinedAt: Date?
 
     let rec = Recorder()
+    let prefs = Prefs.shared
+    private var markers: [Double] = []
+    private var bag = Set<AnyCancellable>()
     private var enteredFullScreen = false
     private var mainWindow: NSWindow? { NSApp.windows.first { $0.isVisible && $0.canBecomeMain } }
 
-    var current: ScriptBlock? { blocks.indices.contains(index) ? blocks[index] : nil }
-    var doneCount: Int { blocks.filter { takes[$0.id] != nil }.count }
+    init() {
+        prefs.$unit.dropFirst().sink { [weak self] _ in
+            DispatchQueue.main.async { self?.rebuildSlots() }
+        }.store(in: &bag)
+    }
+
+    var unit: TakeUnit { prefs.unit }
     var videoMode: Bool { rec.mode == .video }
+    var current: TakeSlot? { slots.indices.contains(index) ? slots[index] : nil }
+    var doneCount: Int { slots.filter { takes[$0.id] != nil }.count }
+    var allDone: Bool { !slots.isEmpty && doneCount == slots.count }
+
+    /// (block, line) of every line in script order — the whole-script take walks through these.
+    var flatLines: [(block: Int, line: Int)] {
+        blocks.indices.flatMap { b in blocks[b].lines.indices.map { (b, $0) } }
+    }
+
+    /// What the prompter shows: the block and the line to highlight (nil = the whole block).
+    var shown: (block: Int, line: Int?)? {
+        guard !blocks.isEmpty else { return nil }
+        switch unit {
+        case .script:
+            let f = flatLines
+            guard f.indices.contains(cursor) else { return (0, nil) }
+            return (f[cursor].block, f[cursor].line)
+        default:
+            guard let s = current else { return nil }
+            return (s.blockIndex, s.line)
+        }
+    }
+
+    /// The take shown in the prompter (sentence: that line, block: that block, whole script: the one take).
+    var shownTake: TakeInfo? { current.flatMap { takes[$0.id] } }
+
+    /// What comes next, for the small preview under the prompter.
+    var nextPreview: String? {
+        guard let sh = shown else { return nil }
+        func clean(_ s: String) -> String { s.replacingOccurrences(of: " ／ ", with: "  ").replacingOccurrences(of: "／", with: " ") }
+        let block = blocks[sh.block]
+        if unit != .block, let l = sh.line, l + 1 < block.lines.count { return clean(block.lines[l + 1]) }
+        guard sh.block + 1 < blocks.count else { return nil }
+        let nb = blocks[sh.block + 1]
+        return "VO_\(nb.id) · " + clean(unit == .block ? nb.lines.joined(separator: " ") : nb.lines[0])
+    }
+
+    /// Recorded slots / all slots of one block (for the list).
+    func progress(ofBlock b: Int) -> (done: Int, total: Int) {
+        if unit == .script { return (takes["FULL"] != nil ? 1 : 0, 1) }
+        let mine = slots.filter { $0.blockIndex == b }
+        return (mine.filter { takes[$0.id] != nil }.count, mine.count)
+    }
+
+    func anyClipped(inBlock b: Int) -> Bool {
+        slots.filter { $0.blockIndex == b }.contains { takes[$0.id]?.clipped == true }
+    }
 
     // MARK: setup
 
@@ -138,13 +210,36 @@ final class Session: ObservableObject {
         }
         let b = ScriptParser.parse(text)
         guard !b.isEmpty else {
-            message = T("這份稿子裡找不到要唸的段落", "No lines to read in this script")
+            message = T("這份稿子裡找不到要唸的段落。格式說明：選單 Help → Script Format Guide",
+                        "No lines to read in this script. See Help → Script Format Guide.")
+            return
+        }
+        let dup = ScriptParser.duplicates(b)
+        guard dup.isEmpty else {
+            message = T("段落名稱重複：", "Duplicate block names: ") + dup.map { "VO_" + $0 }.joined(separator: ", ")
+                + T("（每個 VO_ 名稱都要不一樣，不然錄音檔會互相覆蓋）", " (each VO_ name must be unique, or the files overwrite each other)")
             return
         }
         blocks = b
         scriptName = url.deletingPathExtension().lastPathComponent
         setOutDir(outputBase.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
         message = nil
+    }
+
+    func rebuildSlots() {
+        guard !rec.isRecording else { return }
+        switch unit {
+        case .sentence:
+            slots = blocks.indices.flatMap { b in
+                blocks[b].lines.indices.map { TakeSlot(id: "VO_\(blocks[b].id)_\($0 + 1)", blockIndex: b, line: $0) }
+            }
+        case .block:
+            slots = blocks.indices.map { TakeSlot(id: "VO_\(blocks[$0].id)", blockIndex: $0, line: nil) }
+        case .script:
+            slots = blocks.isEmpty ? [] : [TakeSlot(id: "FULL", blockIndex: 0, line: nil)]
+        }
+        index = slots.firstIndex { takes[$0.id] == nil } ?? 0
+        cursor = 0
     }
 
     /// Where recordings go: <output base>/<script name>_recordings/. The base is remembered between launches
@@ -155,6 +250,21 @@ final class Session: ObservableObject {
         }
         return FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]
     }()
+
+    /// Writes a starter script the user can fill in (examples/template.txt in the repo).
+    func saveTemplate() {
+        let p = NSSavePanel()
+        p.nameFieldStringValue = T("我的稿子.txt", "my_script.txt")
+        p.allowedContentTypes = [.plainText]
+        p.message = T("存一份範本，照著格式寫你的稿子", "Save a template and write your script in this format")
+        guard p.runModal() == .OK, let url = p.url else { return }
+        do {
+            try ScriptTemplate.text.write(to: url, atomically: true, encoding: .utf8)
+            NSWorkspace.shared.open(url)
+        } catch {
+            message = T("存不了範本：", "Couldn't save the template: ") + error.localizedDescription
+        }
+    }
 
     func chooseOutDir() {
         guard !rec.isRecording else { return }
@@ -175,70 +285,198 @@ final class Session: ObservableObject {
     }
 
     private func setOutDir(_ url: URL) {
-        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: url.appendingPathComponent("takes"), withIntermediateDirectories: true)
         outDir = url
         takes = [:]
         if let data = try? Data(contentsOf: url.appendingPathComponent("session.json")),
            let saved = try? Self.decoder.decode(SavedSession.self, from: data) {
-            takes = saved.takes.filter { FileManager.default.fileExists(atPath: url.appendingPathComponent("VO_\($0.key).wav").path) }
+            takes = saved.takes.filter {
+                FileManager.default.fileExists(atPath: url.appendingPathComponent("takes/\($0.key).wav").path)
+            }
         }
-        index = blocks.firstIndex { takes[$0.id] == nil } ?? 0
+        rebuildSlots()
     }
 
-    func audioURL(_ key: String) -> URL? { outDir?.appendingPathComponent("VO_\(key).wav") }
-    func movieURL(_ key: String) -> URL? { outDir?.appendingPathComponent("VO_\(key).mov") }
+    func takeURL(_ slot: String, _ ext: String = "wav") -> URL? { outDir?.appendingPathComponent("takes/\(slot).\(ext)") }
 
     // MARK: recording
 
-    func toggleRecord() {
-        guard let block = current, let url = audioURL(block.id) else { return }
-        if rec.isRecording {
-            let (sec, peak, clip) = rec.stopTake()
-            if sec < 0.3 {  // an accidental tap: don't keep it
-                try? FileManager.default.removeItem(at: url)
-                return
+    /// Space. Sentence / block mode: start, or stop and move on. Whole-script mode: start, then next line, and after
+    /// the last line stop.
+    func space() {
+        if unit == .script && rec.isRecording {
+            if cursor < flatLines.count - 1 {
+                cursor += 1
+                markers.append(rec.takeSeconds)
+            } else {
+                stopRecording()
             }
-            takes[block.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode)
-            save()
-            if index < blocks.count - 1 { index += 1 }
-        } else {
-            rec.stopPlayback()
-            keepOldTake(block.id)
-            do {
-                try rec.startTake(to: url, movie: videoMode ? movieURL(block.id) : nil)
-            } catch {
-                message = T("沒辦法建立錄音檔：", "Couldn't create the file: ") + error.localizedDescription
-            }
+            return
+        }
+        rec.isRecording ? stopRecording() : startRecording()
+    }
+
+    func startRecording() {
+        guard let slot = current, let url = takeURL(slot.id), combining == nil else { return }
+        rec.stopPlayback()
+        keepOldTake(slot.id)
+        if unit == .script {
+            cursor = 0
+            markers = [0]
+        }
+        do {
+            try rec.startTake(to: url, movie: videoMode ? takeURL(slot.id, "mov") : nil)
+        } catch {
+            message = T("沒辦法建立錄音檔：", "Couldn't create the file: ") + error.localizedDescription
         }
     }
 
-    /// Re-recording never destroys a take: the old files move to _old_takes/VO_<key>_<time>.wav/.mov
-    private func keepOldTake(_ key: String) {
+    func stopRecording() {
+        guard rec.isRecording, let slot = current, let url = takeURL(slot.id) else { return }
+        let (sec, peak, clip) = rec.stopTake()
+        if sec < 0.3 {  // an accidental tap: don't keep it
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: url.deletingPathExtension().appendingPathExtension("mov"))
+            return
+        }
+        takes[slot.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode,
+                                  markers: unit == .script ? markers : nil)
+        save()
+        if allDone {
+            if prefs.autoCombine { Task { await combine() } }
+        } else if let next = slots.indices.first(where: { $0 > index && takes[slots[$0].id] == nil })
+                    ?? slots.indices.first(where: { takes[slots[$0].id] == nil }) {
+            index = next
+        }
+    }
+
+    /// Re-recording never destroys a take: the old files move to _old_takes/<slot>_<time>.wav/.mov
+    private func keepOldTake(_ slot: String) {
         guard let dir = outDir else { return }
         let old = dir.appendingPathComponent("_old_takes", isDirectory: true)
         let f = DateFormatter()
         f.dateFormat = "HHmmss"
         let stamp = f.string(from: Date())
-        for (url, ext) in [(audioURL(key), "wav"), (movieURL(key), "mov")] {
-            guard let url, FileManager.default.fileExists(atPath: url.path) else { continue }
+        for ext in ["wav", "mov"] {
+            guard let url = takeURL(slot, ext), FileManager.default.fileExists(atPath: url.path) else { continue }
             try? FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
-            try? FileManager.default.moveItem(at: url, to: old.appendingPathComponent("VO_\(key)_\(stamp).\(ext)"))
+            try? FileManager.default.moveItem(at: url, to: old.appendingPathComponent("\(slot)_\(stamp).\(ext)"))
         }
-        takes[key] = nil
+        takes[slot] = nil
     }
 
     func playCurrent() {
-        guard let block = current, let url = audioURL(block.id), FileManager.default.fileExists(atPath: url.path) else { return }
+        guard let slot = current, let url = takeURL(slot.id), FileManager.default.fileExists(atPath: url.path) else { return }
         if rec.isPlaying { rec.stopPlayback() } else { rec.play(url) }
     }
 
     func go(_ delta: Int) {
-        guard !rec.isRecording, !blocks.isEmpty else { return }
-        index = max(0, min(blocks.count - 1, index + delta))
+        guard !rec.isRecording else { return }
+        if unit == .script {
+            cursor = max(0, min(flatLines.count - 1, cursor + delta))
+        } else if !slots.isEmpty {
+            index = max(0, min(slots.count - 1, index + delta))
+        }
+    }
+
+    /// Jump to a block from the list.
+    func select(block b: Int) {
+        guard !rec.isRecording else { return }
+        if unit == .script {
+            cursor = flatLines.firstIndex { $0.block == b } ?? cursor
+        } else {
+            index = slots.firstIndex { $0.blockIndex == b && takes[$0.id] == nil }
+                ?? slots.firstIndex { $0.blockIndex == b } ?? index
+        }
     }
 
     func revealFolder() {
         if let d = outDir { NSWorkspace.shared.activateFileViewerSelecting([d]) }
+    }
+
+    // MARK: combining
+
+    /// The takes that cover a block, as (wav, mov, window) per line or per block, from whatever exists:
+    /// sentence takes (all lines of the block) > a block take > the whole-script take cut at its line markers.
+    private func sources(forBlock b: Int) -> [(wav: URL, mov: URL?, from: Double, to: Double)]? {
+        guard let dir = outDir else { return nil }
+        let fm = FileManager.default
+        func mov(_ stem: String) -> URL? {
+            let u = dir.appendingPathComponent("takes/\(stem).mov")
+            return fm.fileExists(atPath: u.path) ? u : nil
+        }
+        let block = blocks[b]
+        let lineStems = block.lines.indices.map { "VO_\(block.id)_\($0 + 1)" }
+        if lineStems.allSatisfy({ takes[$0] != nil }) {
+            return lineStems.map { (dir.appendingPathComponent("takes/\($0).wav"), mov($0), 0, .infinity) }
+        }
+        let blockStem = "VO_\(block.id)"
+        if takes[blockStem] != nil {
+            return [(dir.appendingPathComponent("takes/\(blockStem).wav"), mov(blockStem), 0, .infinity)]
+        }
+        if let full = takes["FULL"], let m = full.markers, m.count == flatLines.count {
+            let flat = flatLines
+            return flat.indices.filter { flat[$0].block == b }.map { i in
+                (dir.appendingPathComponent("takes/FULL.wav"), mov("FULL"), max(0, m[i] - 0.05),
+                 i + 1 < m.count ? m[i + 1] : .infinity)
+            }
+        }
+        return nil
+    }
+
+    func combine() async {
+        guard let dir = outDir, combining == nil, !rec.isRecording else { return }
+        let trim = prefs.trimSilence, sGap = prefs.sentenceGap, bGap = prefs.blockGap
+        let all = blocks.indices.compactMap { b in sources(forBlock: b).map { (b, $0) } }
+        guard !all.isEmpty else {
+            message = T("還沒有可以合併的錄音", "Nothing recorded to combine yet")
+            return
+        }
+        combining = T("合併中…", "Combining…")
+        var cache: [URL: [Float]] = [:]
+        var fullPieces: [Piece] = []
+        var videoOK = true
+        do {
+            for (n, (b, src)) in all.enumerated() {
+                combining = T("合併中… \(n + 1)/\(all.count)", "Combining… \(n + 1)/\(all.count)")
+                var blockPieces: [Piece] = []
+                for (k, s) in src.enumerated() {
+                    if cache[s.wav] == nil { cache[s.wav] = try Combiner.read(s.wav) }
+                    let samples = cache[s.wav]!
+                    let firstInBlock = k == 0, lastInBlock = k == src.count - 1
+                    // per-block file: a little padding at its ends; whole file: half the gap on each side of every cut
+                    let r = Combiner.keep(samples, from: s.from, to: s.to, lead: firstInBlock ? 0.15 : sGap / 2,
+                                          tail: lastInBlock ? 0.3 : sGap / 2, trim: trim)
+                    blockPieces.append(Piece(wav: s.wav, mov: s.mov, start: r.0, end: r.1))
+                    let isFirst = n == 0 && firstInBlock, isLast = n == all.count - 1 && lastInBlock
+                    let f = Combiner.keep(samples, from: s.from, to: s.to,
+                                          lead: isFirst ? 0.15 : (firstInBlock ? bGap / 2 : sGap / 2),
+                                          tail: isLast ? 0.4 : (lastInBlock ? bGap / 2 : sGap / 2), trim: trim)
+                    fullPieces.append(Piece(wav: s.wav, mov: s.mov, start: f.0, end: f.1))
+                }
+                let wav = dir.appendingPathComponent("VO_\(blocks[b].id).wav")
+                try Combiner.joinAudio(blockPieces, cache: &cache, to: wav)
+                if blockPieces.allSatisfy({ $0.mov != nil }) {
+                    try await Combiner.joinVideo(blockPieces, audio: wav, to: dir.appendingPathComponent("VO_\(blocks[b].id).mov"))
+                } else {
+                    videoOK = false
+                }
+            }
+            combining = T("合併整份…", "Combining the whole script…")
+            let fullWav = dir.appendingPathComponent("\(scriptName)_full.wav")
+            let dur = try Combiner.joinAudio(fullPieces, cache: &cache, to: fullWav)
+            if videoOK && fullPieces.allSatisfy({ $0.mov != nil }) {
+                try await Combiner.joinVideo(fullPieces, audio: fullWav, to: dir.appendingPathComponent("\(scriptName)_full.mov"))
+            }
+            combinedAt = Date()
+            let missing = blocks.count - all.count
+            message = T("合併好了：\(all.count) 個段落 + 整份 \(String(format: "%.0f", dur)) 秒的 \(scriptName)_full.wav",
+                        "Combined: \(all.count) blocks + \(scriptName)_full.wav (\(String(format: "%.0f", dur)) s)")
+                + (missing > 0 ? T("（還有 \(missing) 段沒錄）", " (\(missing) blocks not recorded yet)") : "")
+        } catch {
+            message = T("合併失敗：", "Combining failed: ") + error.localizedDescription
+        }
+        combining = nil
     }
 
     // MARK: session.json
@@ -248,6 +486,7 @@ final class Session: ObservableObject {
         var microphone: String
         var camera: String?
         var format: String
+        var unit: String?
         var takes: [String: TakeInfo]
     }
 
@@ -263,6 +502,7 @@ final class Session: ObservableObject {
                              microphone: mics.first { $0.id == micUID }?.name ?? "",
                              camera: videoMode ? rec.videoLabel : nil,
                              format: "WAV 48 kHz 24-bit mono, no processing" + (videoMode ? " + MOV (HEVC)" : ""),
+                             unit: unit.rawValue,
                              takes: takes)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]
