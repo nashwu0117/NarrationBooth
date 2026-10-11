@@ -14,7 +14,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN=$(swift build -c release --arch "$ARCH" --show-bin-path)
 cp "$BIN/$EXE" "$APP/Contents/MacOS/$EXE"
-[[ -f "$ROOT/Icon.icns" ]] && cp "$ROOT/Icon.icns" "$APP/Contents/Resources/Icon.icns"
+cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/Icon.icns"   # icon source: Scripts/draw_icon.swift
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

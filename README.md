@@ -1,4 +1,6 @@
-# NarrationBooth
+<p align="center"><img src="docs/icon.png" width="160" alt="NarrationBooth icon"></p>
+
+<h1 align="center">NarrationBooth</h1>
 
 A teleprompter recorder for Mac, made for voice-over and talking-head videos (explainers, tutorials, travel vlogs).
 Open your script, read one block at a time, and every take is saved as a clean, studio-quality file that is ready to edit.
