@@ -29,9 +29,13 @@ NarrationBooth records the way editors want it:
 Get the latest **NarrationBooth-x.y.z.dmg** from [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest),
 open it, and drag **NarrationBooth** onto the **Applications** folder next to it.
 
-> **First launch:** the app isn't notarized by Apple yet, so macOS will say it can't verify the developer.
-> Open it once with **right-click → Open**, or go to **System Settings → Privacy & Security** and click **Open Anyway**.
-> After that it opens normally.
+> **First launch (one time):** NarrationBooth isn't signed with an Apple developer certificate, so macOS blocks it the
+> first time. To allow it:
+> 1. Open NarrationBooth from Applications. macOS says it can't be opened; click **Done** (or **OK**).
+> 2. Open **System Settings → Privacy & Security**, scroll down to **Security**, and next to
+>    *"NarrationBooth" was blocked…* click **Open Anyway**. Confirm with your password, then click **Open Anyway** again.
+>
+> From then on it opens normally. (Terminal alternative: `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`)
 
 ### Updates
 
@@ -54,7 +58,8 @@ open NarrationBooth.app
 ```
 
 `INSTALL=1 Scripts/package_app.sh` also copies the app to `/Applications`.
-The script signs with the best identity in your keychain (Developer ID → Apple Development → ad hoc).
+Local builds are signed with your *Apple Development* identity when you have one (so macOS keeps the microphone
+and camera permission across rebuilds), otherwise ad hoc.
 The first launch asks for microphone (and, in camera mode, camera) access.
 
 ### Releasing (maintainers)
@@ -63,9 +68,8 @@ The first launch asks for microphone (and, in camera mode, camera) access.
 Scripts/release.sh 1.1.0 "What changed"   # bump version, build, make the DMG, tag, push, publish the GitHub release
 ```
 
-`Scripts/make_dmg.sh` builds `dist/NarrationBooth-<version>.dmg`. With a *Developer ID Application* certificate and a
-notarytool profile (`xcrun notarytool store-credentials narrationbooth`) it also signs, notarizes and staples the DMG,
-so it opens without the first-launch warning.
+`Scripts/make_dmg.sh` builds `dist/NarrationBooth-<version>.dmg`. Release builds are signed ad hoc, so downloads
+carry no personal certificate; users allow the app once under Privacy & Security (see *Download*).
 
 ## Writing a script
 
@@ -126,7 +130,11 @@ The interface is in English. Traditional Chinese is available from the **Languag
 - **可以接著錄**：下次打開同一份稿子，會從還沒錄的那段開始。
 
 **下載安裝**：到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.dmg`，打開後把 NarrationBooth 拖到旁邊的「應用程式」資料夾。
-第一次打開如果出現「無法驗證開發者」，在 App 上**按右鍵 → 打開**，或到「系統設定 → 隱私權與安全性」按**仍要打開**，之後就能正常開。
+**第一次打開（只要一次）**：這個 App 沒有用 Apple 開發者憑證簽章，所以 macOS 第一次會擋下來：
+1. 從「應用程式」打開 NarrationBooth，出現「無法打開」時按「完成」。
+2. 打開「系統設定 → 隱私權與安全性」，往下捲到「安全性」，在「已阻擋 NarrationBooth…」旁邊按**強制打開**（或「仍要打開」），輸入密碼後再按一次**強制打開**。
+
+之後就能正常打開。（也可以在終端機執行 `xattr -dr com.apple.quarantine /Applications/NarrationBooth.app`）
 
 **自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
 

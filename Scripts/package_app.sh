@@ -49,20 +49,21 @@ PLIST
 
 xattr -cr "$APP"
 
-# Signing: APP_IDENTITY if set, else the best identity in the keychain:
-#   "Developer ID Application" (hardened runtime, notarizable) > "Apple Development" (stable local identity, so macOS
-#   keeps the mic/camera permission across rebuilds) > ad hoc.
-if [[ -z "${APP_IDENTITY:-}" ]]; then
-  APP_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"' || true)
-  [[ -z "$APP_IDENTITY" ]] && APP_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"' || true)
-fi
+# Signing:
+# - RELEASE=1 (Scripts/release.sh): ad hoc. Builds for download carry no personal certificate; people allow the app once
+#   under System Settings → Privacy & Security → Open Anyway, like most apps distributed on GitHub.
+# - local builds: APP_IDENTITY if set, else an "Apple Development" identity from the keychain when there is one (a stable
+#   signature means macOS keeps the mic/camera permission across rebuilds), else ad hoc.
 ENT="$ROOT/Scripts/NarrationBooth.entitlements"
-if [[ "$APP_IDENTITY" == Developer\ ID* ]]; then
-  codesign --force --timestamp --options runtime --entitlements "$ENT" --sign "$APP_IDENTITY" "$APP"
-elif [[ -n "$APP_IDENTITY" ]]; then
+if [[ "${RELEASE:-0}" == "1" ]]; then
+  APP_IDENTITY=""
+elif [[ -z "${APP_IDENTITY:-}" ]]; then
+  APP_IDENTITY=$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Apple Development: [^"]*"' | head -1 | tr -d '"' || true)
+fi
+if [[ -n "$APP_IDENTITY" ]]; then
   codesign --force --entitlements "$ENT" --sign "$APP_IDENTITY" "$APP"
 else
-  codesign --force --sign - --identifier com.nashwu.narrationbooth "$APP"
+  codesign --force --entitlements "$ENT" --sign - --identifier com.nashwu.narrationbooth "$APP"
 fi
 codesign --verify "$APP" && echo "OK: $APP  (signed: ${APP_IDENTITY:-ad hoc})"
 if [[ "${INSTALL:-0}" == "1" ]]; then

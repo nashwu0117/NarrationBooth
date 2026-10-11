@@ -10,7 +10,7 @@ NOTES=${2:-"NarrationBooth $VERSION"}
 source version.env
 BUILD=$((BUILD_NUMBER + 1))
 printf 'MARKETING_VERSION=%s\nBUILD_NUMBER=%s\n' "$VERSION" "$BUILD" > version.env
-Scripts/package_app.sh
+RELEASE=1 Scripts/package_app.sh   # ad hoc signed: no personal certificate in downloads
 Scripts/make_dmg.sh
 git add version.env
 git commit -m "Release $VERSION" >/dev/null || true
