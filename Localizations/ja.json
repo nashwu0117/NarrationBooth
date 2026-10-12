@@ -141,8 +141,15 @@
   "Check your connection, or look on GitHub: ": "接続を確認するか、GitHub をご覧ください：",
   "NarrationBooth %@ is available": "NarrationBooth %@ が利用できます",
   "You have %@.": "現在のバージョンは %@ です。",
-  "\n\nUnzip the download and drag NarrationBooth into Applications to replace this version (then allow it once under Privacy & Security → Open Anyway).": "\n\nダウンロードしたファイルを解凍し、NarrationBooth を「アプリケーション」にドラッグしてこのバージョンと置き換えてください（初回は プライバシーとセキュリティ で「このまま開く」を一度許可）。",
+  "Install and Relaunch": "インストールして再起動",
   "Download": "ダウンロード",
   "Later": "あとで",
-  "Skip This Version": "このバージョンをスキップ"
+  "Skip This Version": "このバージョンをスキップ",
+  "Downloading NarrationBooth %@…": "NarrationBooth %@ をダウンロード中…",
+  "the download doesn't match its checksum": "ダウンロードしたファイルがチェックサムと一致しません",
+  "Installing…": "インストール中…",
+  "the download isn't the expected NarrationBooth version": "ダウンロードしたものが想定した NarrationBooth のバージョンではありません",
+  "couldn't write to %@ (permissions?)": "%@ に書き込めませんでした（権限？）",
+  "Couldn't update automatically": "自動アップデートできませんでした",
+  "\n\nYou can download it yourself instead: unzip it and drag NarrationBooth into Applications.": "\n\n代わりに手動でダウンロードできます：解凍して NarrationBooth を「アプリケーション」にドラッグしてください。"
 }

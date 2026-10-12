@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Publish a new version: bump version.env, build, zip the app, tag, push, and create the GitHub release with the ZIP.
+# Publish a new version: bump version.env, build, zip the app, tag, push, and create the GitHub release with the ZIP
+# and its SHA-256 (the app's "Install and Relaunch" refuses a ZIP that doesn't match it).
 # The app's update checker (Updater.swift) looks at the latest GitHub release, so users get told about it.
 # Usage: Scripts/release.sh 1.1.0 "What changed (one line or more)"
 set -euo pipefail
@@ -16,4 +17,7 @@ git add version.env
 git commit -m "Release $VERSION" >/dev/null || true
 git tag "v$VERSION"
 git push origin HEAD "v$VERSION"
-gh release create "v$VERSION" "dist/NarrationBooth-$VERSION.zip" --title "NarrationBooth $VERSION" --notes "$NOTES"
+# checksum the in-app updater verifies before installing
+(cd dist && shasum -a 256 "NarrationBooth-$VERSION.zip" > "NarrationBooth-$VERSION.zip.sha256")
+gh release create "v$VERSION" "dist/NarrationBooth-$VERSION.zip" "dist/NarrationBooth-$VERSION.zip.sha256" \
+  --title "NarrationBooth $VERSION" --notes "$NOTES"

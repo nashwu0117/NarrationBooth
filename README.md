@@ -43,8 +43,10 @@ NarrationBooth records the way editors want it:
 ### Updates
 
 NarrationBooth checks GitHub for a new release once a day (and from **NarrationBooth → Check for Updates…**).
-When there is one, it shows what changed and a **Download** button; unzip the download and drag the app into
-Applications to replace the old one. Your settings and recordings are kept.
+When there is one, it shows what changed and an **Install and Relaunch** button: the app downloads the new version,
+checks it (the SHA-256 published with the release, the bundle id, the version and the code signature), moves the old copy
+to the Trash, puts the new one in its place and reopens. No unzipping, no Open Anyway. If anything doesn't check out, it
+offers the download instead. Your settings and recordings are kept. (The very first install still needs Open Anyway once.)
 
 ## Requirements
 
@@ -219,7 +221,7 @@ Translations are plain JSON files in [`Localizations/`](Localizations/README.md)
 
 > 為什麼是 ZIP 不是 DMG？新版 macOS 打開 DMG 會跳出「要安裝此 App 嗎？」，而那個安裝視窗會直接拒絕沒經過 Apple 公證的 App（「這部 Mac 無法驗證此 App，因此沒有安裝」）。用 ZIP 自己拖進「應用程式」就不會遇到。
 
-**自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載的 ZIP 解壓縮後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
+**自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查）。有新版時按「安裝並重新開啟」，App 會自己下載、驗證（比對官方發布的 SHA-256 指紋、App 識別碼、版本和程式碼簽章）、把舊版移到垃圾桶、換上新版再重新打開，不用解壓縮，也不用再去「隱私權與安全性」按強制打開。驗證不過就不會安裝，改成讓你手動下載。設定和錄音都會保留。（只有第一次安裝需要按一次強制打開。）
 
 **稿子格式**：見 [docs/SCRIPT_FORMAT.md](docs/SCRIPT_FORMAT.md)（有中文說明），範本在 [examples/template.txt](examples/template.txt)，App 選單 Help → Save Script Template… 也能存一份。
 

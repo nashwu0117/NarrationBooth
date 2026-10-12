@@ -141,8 +141,15 @@
   "Check your connection, or look on GitHub: ": "Revisa tu conexión o mira en GitHub: ",
   "NarrationBooth %@ is available": "NarrationBooth %@ está disponible",
   "You have %@.": "Tienes la %@.",
-  "\n\nUnzip the download and drag NarrationBooth into Applications to replace this version (then allow it once under Privacy & Security → Open Anyway).": "\n\nDescomprime la descarga y arrastra NarrationBooth a Aplicaciones para reemplazar esta versión (después permítela una vez en Privacidad y seguridad → Abrir igualmente).",
+  "Install and Relaunch": "Instalar y reabrir",
   "Download": "Descargar",
   "Later": "Más tarde",
-  "Skip This Version": "Omitir esta versión"
+  "Skip This Version": "Omitir esta versión",
+  "Downloading NarrationBooth %@…": "Descargando NarrationBooth %@…",
+  "the download doesn't match its checksum": "la descarga no coincide con su suma de comprobación",
+  "Installing…": "Instalando…",
+  "the download isn't the expected NarrationBooth version": "la descarga no es la versión de NarrationBooth esperada",
+  "couldn't write to %@ (permissions?)": "no se pudo escribir en %@ (¿permisos?)",
+  "Couldn't update automatically": "No se pudo actualizar automáticamente",
+  "\n\nYou can download it yourself instead: unzip it and drag NarrationBooth into Applications.": "\n\nTambién puedes descargarla tú: descomprímela y arrastra NarrationBooth a Aplicaciones."
 }

@@ -141,8 +141,15 @@
   "Check your connection, or look on GitHub: ": "请检查网络，或到 GitHub 查看：",
   "NarrationBooth %@ is available": "有新版本：NarrationBooth %@",
   "You have %@.": "你现在用的是 %@。",
-  "\n\nUnzip the download and drag NarrationBooth into Applications to replace this version (then allow it once under Privacy & Security → Open Anyway).": "\n\n解压下载的文件，把 NarrationBooth 拖进「应用程序」替换这个版本（第一次打开时到 隐私与安全性 按「仍要打开」）。",
+  "Install and Relaunch": "安装并重新打开",
   "Download": "下载",
   "Later": "以后再说",
-  "Skip This Version": "跳过这个版本"
+  "Skip This Version": "跳过这个版本",
+  "Downloading NarrationBooth %@…": "正在下载 NarrationBooth %@…",
+  "the download doesn't match its checksum": "下载的文件和官方校验值不符",
+  "Installing…": "正在安装…",
+  "the download isn't the expected NarrationBooth version": "下载的不是预期的 NarrationBooth 版本",
+  "couldn't write to %@ (permissions?)": "无法写入 %@（权限不足？）",
+  "Couldn't update automatically": "无法自动更新",
+  "\n\nYou can download it yourself instead: unzip it and drag NarrationBooth into Applications.": "\n\n可以改用手动下载：解压后把 NarrationBooth 拖进「应用程序」。"
 }
