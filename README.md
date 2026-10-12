@@ -138,6 +138,18 @@ Each script gets its own folder:
 Tips: speak at your normal pace, keep peaks in the green zone, and if you stumble, press Space twice
 (stop, then record again) to redo that take. Re-recording one sentence and combining again is enough.
 
+## Microphones
+
+Any mic macOS sees works: built-in, USB, audio interfaces, an iPhone (Continuity), Bluetooth. Mics that are connected
+while the app is open show up right away, and the app remembers your choice. The format label in the top bar turns amber
+when the selected mic delivers less than 44.1 kHz.
+
+**Wireless clip-on mics (DJI Mic, RØDE Wireless, etc.): plug the receiver in, don't pair the transmitter over Bluetooth.**
+Paired straight to a Mac, a transmitter runs as a Bluetooth headset: 16 kHz, phone quality, and some (DJI Mic Mini)
+force their strongest noise cancellation on. Plug the receiver into the Mac's USB-C port instead, so it shows up as a
+digital USB mic, and set gain on the receiver. For narration in a quiet room, turn the mic's own noise cancellation off:
+the voice sounds fuller, and noise is easier to clean up in the edit.
+
 ## Language
 
 The interface is in English. Traditional Chinese is available from the **Language** menu (relaunch to apply).
@@ -176,6 +188,10 @@ The interface is in English. Traditional Chinese is available from the **Languag
 **自動更新**：App 每天會檢查一次 GitHub 有沒有新版本（也可以從選單「Check for Updates…」手動檢查），有新版會顯示更新內容和下載按鈕，下載的 ZIP 解壓縮後一樣拖進「應用程式」取代舊版，設定和錄音都會保留。
 
 **稿子格式**：見 [docs/SCRIPT_FORMAT.md](docs/SCRIPT_FORMAT.md)（有中文說明），範本在 [examples/template.txt](examples/template.txt)，App 選單 Help → Save Script Template… 也能存一份。
+
+**麥克風**：內建、USB、錄音介面、iPhone、藍牙都可以。App 開著時才接上的麥克風會馬上出現在清單裡，也會記住你上次選的。麥克風低於 44.1 kHz 時，上方的格式標籤會變成橘色。
+
+> **無線領夾麥（DJI Mic、RØDE Wireless 等）：把接收器插上 Mac，不要讓發射器直接用藍牙配對。** 發射器直接藍牙連 Mac 會被當成藍牙耳機，只有 16 kHz 的電話音質，DJI Mic Mini 還會強制開最強的降噪。把接收器插在 Mac 的 USB-C 孔，就是數位 USB 麥克風，增益在接收器上調。在安靜的房間錄旁白，建議把麥克風本身的降噪關掉，聲音比較飽滿，雜音後製再處理就好。
 
 介面預設英文，可以從選單「Language → 繁體中文」切換。
 

@@ -220,7 +220,7 @@ struct TopBar: View {
             }
             HStack(spacing: 12) {
                 Image(systemName: "mic").foregroundStyle(Booth.dim)
-                Picker("", selection: Binding(get: { s.micUID ?? "" }, set: { s.selectMic($0) })) {
+                Picker("", selection: Binding(get: { s.micUID ?? "" }, set: { s.selectMic($0, remember: true) })) {
                     ForEach(s.mics) { d in Text(d.name).tag(d.id) }
                 }
                 .labelsHidden().frame(width: 210).disabled(rec.isRecording)
@@ -245,7 +245,11 @@ struct TopBar: View {
                 }
                 .help(T("錄音存在：", "Saving to: ") + (s.outDir ?? s.outputBase).abbreviatedPath + T("（點一下換位置）", " (click to change)"))
                 .disabled(rec.isRecording)
-                Text(formatLabel).font(.system(size: 11, design: .monospaced)).foregroundStyle(Booth.dim).lineLimit(1)
+                Text(formatLabel).font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(s.micIsLowQuality ? Booth.amber : Booth.dim).lineLimit(1)
+                    .help(s.micIsLowQuality
+                          ? T("麥克風只送出 \(Int(s.micRate / 1000)) kHz，存成 48 kHz 也補不回高頻", "The mic only delivers \(Int(s.micRate / 1000)) kHz; saving at 48 kHz can't bring the highs back")
+                          : T("錄音格式", "Recording format"))
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 10)
@@ -254,7 +258,7 @@ struct TopBar: View {
     }
 
     var formatLabel: String {
-        let audio = "WAV 48 kHz · 24-bit"
+        let audio = s.micIsLowQuality ? "⚠︎ mic \(Int(s.micRate / 1000)) kHz" : "WAV 48 kHz · 24-bit"
         return s.videoMode && !rec.videoLabel.isEmpty ? "\(rec.videoLabel) + \(audio)" : audio
     }
 }

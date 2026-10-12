@@ -48,6 +48,9 @@ final class Session: ObservableObject {
     @Published var inputVolume: Float = 0.5
     @Published var canSetVolume = false
     @Published var message: String?
+    /// Native sample rate of the selected mic (0 = unknown). Bluetooth mics report 16 kHz.
+    @Published var micRate: Double = 0
+    var micIsLowQuality: Bool { micRate > 0 && micRate < 44_100 }
     @Published var combining: String?        // progress text while combining
     @Published var combinedAt: Date?
 
@@ -121,6 +124,7 @@ final class Session: ObservableObject {
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".md") || $0.hasSuffix(".txt") }) {
             open(URL(fileURLWithPath: path))
         }
+        watchDevices()
         AVCaptureDevice.requestAccess(for: .audio) { ok in
             DispatchQueue.main.async {
                 if !ok {
@@ -128,7 +132,39 @@ final class Session: ObservableObject {
                                      "No microphone access: System Settings → Privacy & Security → Microphone → allow NarrationBooth")
                 }
                 self.refreshDevices()
-                self.selectMic(self.micUID ?? AVCaptureDevice.default(for: .audio)?.uniqueID)
+                // the mic chosen last time, if it's connected
+                let saved = UserDefaults.standard.string(forKey: "micUID").flatMap { uid in self.mics.contains { $0.id == uid } ? uid : nil }
+                self.selectMic(saved ?? self.micUID ?? AVCaptureDevice.default(for: .audio)?.uniqueID)
+            }
+        }
+    }
+
+    /// Mics and cameras that are plugged in or paired (Bluetooth, USB, iPhone) while the app is open show up right away.
+    /// A newly connected mic is selected (unless a take is running); if the selected one goes away, it falls back to the default.
+    private func watchDevices() {
+        let nc = NotificationCenter.default
+        nc.addObserver(forName: AVCaptureDevice.wasConnectedNotification, object: nil, queue: .main) { [weak self] n in
+            guard let self, let dev = n.object as? AVCaptureDevice else { return }
+            // Core Audio needs a moment before a Bluetooth input is ready to open
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                self.refreshDevices()
+                guard dev.hasMediaType(.audio), !self.rec.isRecording, self.combining == nil else { return }
+                self.selectMic(dev.uniqueID, remember: true)
+                self.message = T("已切換到 \(dev.localizedName)", "Switched to \(dev.localizedName)")
+            }
+        }
+        nc.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: .main) { [weak self] n in
+            guard let self, let dev = n.object as? AVCaptureDevice else { return }
+            let wasMine = dev.uniqueID == self.micUID
+            if wasMine && self.rec.isRecording { self.stopRecording() }
+            self.refreshDevices()
+            if wasMine {
+                self.selectMic(AVCaptureDevice.default(for: .audio)?.uniqueID)
+                self.message = T("\(dev.localizedName) 斷線了，改用預設麥克風", "\(dev.localizedName) disconnected; using the default mic")
+            }
+            if dev.uniqueID == self.cameraUID {
+                self.cameraUID = self.cameras.first?.id
+                if self.videoMode { self.rec.setVideo(cameraUID: self.cameraUID) }
             }
         }
     }
@@ -142,15 +178,24 @@ final class Session: ObservableObject {
 
     private var coreAudioDevice: AudioDeviceID? { micUID.flatMap { AudioDevices.coreAudioID(uid: $0) } }
 
-    func selectMic(_ uid: String?) {
+    func selectMic(_ uid: String?, remember: Bool = false) {
         guard !rec.isRecording else { return }
         micUID = uid
+        if remember, let uid { UserDefaults.standard.set(uid, forKey: "micUID") }
         rec.start(deviceUID: uid)
         if let id = coreAudioDevice {
             canSetVolume = AudioDevices.canSetInputVolume(id)
             inputVolume = AudioDevices.inputVolume(id) ?? 0.5
+            // Bluetooth mics run in the hands-free profile on a Mac: 16 kHz, phone quality
+            let sr = AudioDevices.sampleRate(id)
+            micRate = sr
+            if micIsLowQuality {
+                message = T("注意：這支麥克風現在只有 \(Int(sr / 1000)) kHz（藍牙是電話音質）。想要好音質請用 USB／線材接收器，或改用內建麥克風。",
+                            "Heads-up: this mic only delivers \(Int(sr / 1000)) kHz right now (Bluetooth runs at phone quality). For good sound, connect its receiver by USB or cable, or use the built-in mic.")
+            }
         } else {
             canSetVolume = false
+            micRate = 0
         }
     }
 
