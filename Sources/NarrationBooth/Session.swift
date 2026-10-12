@@ -37,7 +37,9 @@ struct TakeSlot: Identifiable, Hashable {
 final class Session: ObservableObject {
     @Published var blocks: [ScriptBlock] = []
     @Published var slots: [TakeSlot] = []
-    @Published var index = 0                 // current slot
+    @Published var index = 0 {               // current slot
+        didSet { if index != oldValue { savePosition() } }
+    }
     @Published var cursor = 0                // whole-script mode: current line (flat index across the script)
     @Published var scriptName = ""
     @Published var outDir: URL?
@@ -124,6 +126,14 @@ final class Session: ObservableObject {
         // `NarrationBooth path/to/script.md` from a terminal opens that script
         if let path = CommandLine.arguments.dropFirst().first(where: { $0.hasSuffix(".md") || $0.hasSuffix(".txt") }) {
             open(URL(fileURLWithPath: path))
+        } else if blocks.isEmpty, let last = recentScripts.first {
+            open(last)   // pick up where you left off
+        }
+        // quitting in the middle of a take still saves it properly
+        NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
+            guard let self, self.rec.isRecording else { return }
+            if self.unit == .script { self.markers.append(self.rec.takeSeconds) }
+            self.stopRecording()
         }
         watchDevices()
         AVCaptureDevice.requestAccess(for: .audio) { ok in
@@ -267,11 +277,13 @@ final class Session: ObservableObject {
                 + T("（每個 VO_ 名稱都要不一樣，不然錄音檔會互相覆蓋）", " (each VO_ name must be unique, or the files overwrite each other)")
             return
         }
+        guard !rec.isRecording else { return }
         blocks = b
         prefs.paceLanguage = PaceLanguage.detect(b.flatMap(\.lines))
         scriptName = url.deletingPathExtension().lastPathComponent
-        setOutDir(outputBase.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
+        addRecent(url)
         message = nil
+        setOutDir(outputBase.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
     }
 
     func rebuildSlots() {
@@ -336,13 +348,17 @@ final class Session: ObservableObject {
         try? FileManager.default.createDirectory(at: url.appendingPathComponent("takes"), withIntermediateDirectories: true)
         outDir = url
         takes = [:]
+        var position: String?
         if let data = try? Data(contentsOf: url.appendingPathComponent("session.json")),
            let saved = try? Self.decoder.decode(SavedSession.self, from: data) {
             takes = saved.takes.filter {
                 FileManager.default.fileExists(atPath: url.appendingPathComponent("takes/\($0.key).wav").path)
             }
+            position = saved.position
         }
+        recoverUnsavedTakes(in: url)
         rebuildSlots()
+        if let position, let i = slots.firstIndex(where: { $0.id == position }) { index = i }
     }
 
     func takeURL(_ slot: String, _ ext: String = "wav") -> URL? { outDir?.appendingPathComponent("takes/\(slot).\(ext)") }
@@ -424,6 +440,7 @@ final class Session: ObservableObject {
         reviewing = false
         pendingOld = (slot.id, keepOldTake(slot.id), takes[slot.id])
         takes[slot.id] = nil
+        save()   // session.json must not describe the old take while the new one is being written
         if unit == .script {
             cursor = 0
             markers = [0]
@@ -624,7 +641,56 @@ final class Session: ObservableObject {
         var camera: String?
         var format: String
         var unit: String?
+        var position: String?     // the line you were on, so reopening continues there
         var takes: [String: TakeInfo]
+    }
+
+    private func savePosition() {
+        guard outDir != nil, !blocks.isEmpty else { return }
+        save()
+    }
+
+    /// A take on disk that session.json doesn't know about (the app crashed or was force-quit mid-take): repair the WAV
+    /// header if it was never finished, and add the take back.
+    private func recoverUnsavedTakes(in dir: URL) {
+        let folder = dir.appendingPathComponent("takes")
+        guard let files = try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) else { return }
+        var recovered = 0
+        for f in files where f.pathExtension == "wav" {
+            let id = f.deletingPathExtension().lastPathComponent
+            let repaired = WAVRepair.fixHeader(f)
+            // known and intact: nothing to do. A repaired file whose entry belongs to an older take (a re-take that was
+            // cut off) gets its entry rebuilt from the file.
+            guard takes[id] == nil || repaired else { continue }
+            guard let samples = try? Combiner.read(f), samples.count > Int(0.3 * Combiner.rate) else { continue }
+            let peak = samples.reduce(Float(0)) { max($0, abs($1)) }
+            let db = 20 * log10(max(peak, 1e-6))
+            let mov = f.deletingPathExtension().appendingPathExtension("mov")
+            takes[id] = TakeInfo(seconds: Double(samples.count) / Combiner.rate, peakDB: db, clipped: db > -0.5,
+                                 recordedAt: (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? Date(),
+                                 video: FileManager.default.fileExists(atPath: mov.path) ? true : nil)
+            recovered += 1
+        }
+        if recovered > 0 {
+            save()
+            message = T("找回 %@ 段上次沒存到的錄音。", "Recovered %@ take(s) that weren't saved last time.", "\(recovered)")
+        }
+    }
+
+    // MARK: recent scripts
+
+    @Published var recentScripts: [URL] = (UserDefaults.standard.stringArray(forKey: "recentScripts") ?? [])
+        .map { URL(fileURLWithPath: $0) }
+        .filter { FileManager.default.fileExists(atPath: $0.path) }
+
+    private func addRecent(_ url: URL) {
+        recentScripts = ([url] + recentScripts.filter { $0.standardizedFileURL != url.standardizedFileURL }).prefix(10).map { $0 }
+        UserDefaults.standard.set(recentScripts.map(\.path), forKey: "recentScripts")
+    }
+
+    func clearRecent() {
+        recentScripts = []
+        UserDefaults.standard.removeObject(forKey: "recentScripts")
     }
 
     private static let decoder: JSONDecoder = {
@@ -640,6 +706,7 @@ final class Session: ObservableObject {
                              camera: videoMode ? rec.videoLabel : nil,
                              format: "WAV 48 kHz 24-bit mono, no processing" + (videoMode ? " + MOV (HEVC)" : ""),
                              unit: unit.rawValue,
+                             position: current?.id,
                              takes: takes)
         let enc = JSONEncoder()
         enc.outputFormatting = [.prettyPrinted, .sortedKeys]

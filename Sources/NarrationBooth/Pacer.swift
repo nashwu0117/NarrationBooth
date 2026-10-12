@@ -184,7 +184,8 @@ func paceTimelines(_ lines: [String], rate: Double) -> [PaceTimeline] {
 func paceRatio(take url: URL, lines: [String], rate: Double) -> Double? {
     guard let s = try? Combiner.read(url), let (a, b) = Combiner.speech(s, from: 0, to: Double(s.count) / Combiner.rate),
           b - a > 0.5, let expected = paceTimelines(lines, rate: rate).last?.duration, expected > 0.5 else { return nil }
-    return expected / (b - a)
+    let r = expected / (b - a)
+    return (0.4...2.5).contains(r) ? r : nil   // outside this range it wasn't really the line being read
 }
 
 /// Seconds since the guide started (negative during the lead-in), refreshed every frame while recording.

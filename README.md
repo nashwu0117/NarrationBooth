@@ -114,9 +114,9 @@ you recorded, never inserted silence, so audio and video share exactly the same 
 |---|---|
 | Space | Record / stop; after checking a take, go to the next line and record it (whole-script mode: next sentence) |
 | P | Play the take back |
-| R | Re-record the take you just made |
+| R | Record the line on screen again (works on any line, not just the last one) |
 | Esc | Stop the current take |
-| ← → | Previous / next line (or click a line) |
+| ← → or ↑ ↓ | Previous / next line (or click a line) |
 | [ ] | Pacing guide slower / faster |
 | ⌘J | Combine takes now |
 | ⌘O | Open a script |
@@ -138,6 +138,12 @@ default, the usual clear pace for video narration:
 
 Change it with the − / + next to the prompter, the `[` `]` keys, or in Settings (each language remembers its own pace,
 and **Default** puts it back). The guide can also be turned off there. After each take NarrationBooth tells you whether you were on pace or how much faster you read.
+
+### Picking up where you left off
+
+Quit whenever you like: NarrationBooth reopens the last script on the line you were on (**File → Open Recent** lists the
+others). Quitting during a take saves it. If the app is force-quit or the Mac loses power mid-take, the next launch
+repairs that unfinished WAV and adds it back.
 
 ### Where files go
 
@@ -199,7 +205,8 @@ Translations are plain JSON files in [`Localizations/`](Localizations/README.md)
 - **會告訴你怎麼調的音量表**：「太小聲：靠近一點」「爆音了！調低輸入音量」，綠色區就是講話時峰值該停的位置。
 - **測環境噪音**、**選麥克風／調輸入音量**（支援 USB 麥克風、錄音介面、iPhone 當麥克風或鏡頭）。
 - **重錄不會蓋掉舊的**：舊的那次會移到 `_old_takes/`。
-- **可以接著錄**：下次打開同一份稿子，會從還沒錄的那句開始。
+- **關掉也能接著錄**：重新打開 App 會自動回到上次的稿子、停在你上次的那一句（「File → Open Recent」可以開其他最近的稿子）。錄音中關掉 App 會先存好那一段；就算當機或斷電，下次打開也會把錄到一半的檔案修好找回來。
+- **快捷鍵**：空白鍵錄／停、P 播放、R 重錄畫面上這一句（任何一句都可以）、← → 或 ↑ ↓ 上一句／下一句、Esc 停止。
 
 **下載安裝**：
 1. 到 [Releases](https://github.com/nashwu0117/NarrationBooth/releases/latest) 下載 `NarrationBooth-x.y.z.zip`。

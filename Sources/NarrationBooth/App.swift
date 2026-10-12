@@ -37,6 +37,15 @@ struct NarrationBoothApp: App {
             }
             CommandGroup(replacing: .newItem) {
                 Button(T("開啟稿子…", "Open Script…")) { session.openPanel() }.keyboardShortcut("o")
+                Menu(T("最近開過的稿子", "Open Recent")) {
+                    ForEach(session.recentScripts, id: \.self) { url in
+                        Button(url.lastPathComponent) { session.open(url) }
+                    }
+                    if !session.recentScripts.isEmpty {
+                        Divider()
+                        Button(T("清除清單", "Clear Menu")) { session.clearRecent() }
+                    }
+                }
                 Button(T("選擇存檔資料夾…", "Choose Output Folder…")) { session.chooseOutDir() }.keyboardShortcut("o", modifiers: [.command, .shift])
             }
         }
@@ -656,9 +665,9 @@ struct Controls: View {
     @ViewBuilder
     func row(compact: Bool) -> some View {
         HStack(spacing: 12) {
-            Button { s.go(-1) } label: { Label(T("上一個", "Previous"), systemImage: "chevron.left") }
+            Button { s.go(-1) } label: { Label(T("上一句（←）", "Previous (←)"), systemImage: "chevron.left") }
                 .keyboardShortcut(.leftArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
-                .help(T("上一個（←）", "Previous (←)"))
+                .help(T("上一句（←，也可以用 ↑）", "Previous (← or ↑)"))
             Button { s.space() } label: {
                 HStack(spacing: 10) {
                     Image(systemName: rec.isRecording ? (s.unit == .script ? "forward.fill" : "stop.fill") : "record.circle")
@@ -669,11 +678,18 @@ struct Controls: View {
             .keyboardShortcut(.space, modifiers: [])
             .buttonStyle(.borderedProminent).tint(rec.isRecording ? Booth.red.opacity(0.85) : Booth.red)
             .disabled(s.current == nil || !rec.running || s.combining != nil)
-            Button { s.go(1) } label: { Label(T("下一個", "Next"), systemImage: "chevron.right") }
+            Button { s.go(1) } label: { Label(T("下一句（→）", "Next (→)"), systemImage: "chevron.right") }
                 .keyboardShortcut(.rightArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
-                .help(T("下一個（→）", "Next (→)"))
+                .help(T("下一句（→，也可以用 ↓）", "Next (→ or ↓)"))
             // Esc stops any take (in whole-script mode it ends the take early)
             Button("") { s.stopRecording() }.keyboardShortcut(.escape, modifiers: []).opacity(0).frame(width: 0)
+            Button("") { s.go(-1) }.keyboardShortcut(.upArrow, modifiers: []).opacity(0).frame(width: 0).disabled(rec.isRecording)
+            Button("") { s.go(1) }.keyboardShortcut(.downArrow, modifiers: []).opacity(0).frame(width: 0).disabled(rec.isRecording)
+            if !(s.reviewing || (s.shownTake != nil && !rec.isRecording && s.unit != .script)) {
+                // R records the line on screen even when the Re-record button isn't shown
+                Button("") { s.rerecord() }.keyboardShortcut("r", modifiers: []).opacity(0).frame(width: 0)
+                    .disabled(rec.isRecording || s.current == nil)
+            }
             Spacer()
             if let c = s.combining {
                 ProgressView().controlSize(.small)
@@ -689,7 +705,7 @@ struct Controls: View {
                 .help(T("把錄好的句子接成每段一個檔，再加上整份的 _full 檔", "Join the takes into one file per block plus a _full file"))
                 .disabled(rec.isRecording).fixedSize()
             }
-            if s.reviewing {
+            if s.reviewing || (s.shownTake != nil && !rec.isRecording && s.unit != .script) {
                 Button { s.rerecord() } label: { Label(T("重錄這句（R）", "Re-record (R)"), systemImage: "arrow.counterclockwise") }
                     .keyboardShortcut("r", modifiers: []).fixedSize()
                     .help(T("重錄這句（R）", "Re-record (R)"))
