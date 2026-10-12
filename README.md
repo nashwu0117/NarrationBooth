@@ -150,6 +150,10 @@ force their strongest noise cancellation on. Plug the receiver into the Mac's US
 digital USB mic, and set gain on the receiver. For narration in a quiet room, turn the mic's own noise cancellation off:
 the voice sounds fuller, and noise is easier to clean up in the edit.
 
+**Safety track.** Receivers that send a second, 6 dB quieter copy of the voice (DJI Mic "safety track") are detected
+automatically: NarrationBooth records the main channel only, and if a take clips, it saves that take from the safety
+track instead. Two transmitters in stereo mode are mixed into the mono file.
+
 ## Language
 
 The interface is in English. Traditional Chinese is available from the **Language** menu (relaunch to apply).
@@ -192,6 +196,8 @@ The interface is in English. Traditional Chinese is available from the **Languag
 **麥克風**：內建、USB、錄音介面、iPhone、藍牙都可以。App 開著時才接上的麥克風會馬上出現在清單裡，也會記住你上次選的。麥克風低於 44.1 kHz 時，上方的格式標籤會變成橘色。
 
 > **無線領夾麥（DJI Mic、RØDE Wireless 等）：把接收器插上 Mac，不要讓發射器直接用藍牙配對。** 發射器直接藍牙連 Mac 會被當成藍牙耳機，只有 16 kHz 的電話音質，DJI Mic Mini 還會強制開最強的降噪。把接收器插在 Mac 的 USB-C 孔，就是數位 USB 麥克風，增益在接收器上調。在安靜的房間錄旁白，建議把麥克風本身的降噪關掉，聲音比較飽滿，雜音後製再處理就好。
+>
+> **安全音軌（防爆音）**：接收器如果有開安全音軌（第二聲道是小 6 dB 的同一個聲音，例如 DJI Mic），App 會自動認出來，只錄主聲道；某一句爆音了，那一句就自動改用安全音軌存檔。兩個發射器的立體聲模式則會混成單聲道。
 
 介面預設英文，可以從選單「Language → 繁體中文」切換。
 

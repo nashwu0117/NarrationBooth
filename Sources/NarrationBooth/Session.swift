@@ -384,6 +384,9 @@ final class Session: ObservableObject {
             try? FileManager.default.removeItem(at: url.deletingPathExtension().appendingPathExtension("mov"))
             return
         }
+        if rec.usedSafetyTrack {
+            message = T("這句爆音了，已自動改用麥克風的安全音軌（小 6 dB、沒爆音）。", "That take clipped, so it was saved from the mic's safety track (6 dB lower, not clipped).")
+        }
         takes[slot.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode,
                                   markers: unit == .script ? markers : nil)
         save()

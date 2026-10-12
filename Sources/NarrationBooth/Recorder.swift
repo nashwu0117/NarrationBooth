@@ -4,7 +4,8 @@ import CoreAudio
 
 /// Mic capture with AVCaptureSession (input-only, so a missing/odd output device can't stop it — AVAudioEngine did).
 /// Live meter + takes written as 48 kHz / 24-bit / mono WAV. No voice processing, no AGC, no compression: the file is
-/// exactly what the mic hears. The capture output delivers 48 kHz mono float; the file stores 24-bit integer PCM.
+/// exactly what the mic hears. The capture output delivers 48 kHz stereo float (see `Channels`); the file stores
+/// 24-bit integer PCM, mono.
 final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSampleBufferDelegate,
                       AVCaptureFileOutputRecordingDelegate {
     enum Mode: String, CaseIterable { case audio, video }
@@ -36,7 +37,28 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
     private let queue = DispatchQueue(label: "booth.audio")
     private let fileFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Recorder.fileRate, channels: 1,
                                            interleaved: false)!
+    private var inChannels = 1                    // capture queue only: 1 or 2, matches the mic
+
+    /// Float, non-interleaved, at the mic's own channel count (a mono mic asked for stereo comes back 3 dB down).
+    static func captureSettings(channels: Int) -> [String: Any] {
+        [AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: Recorder.fileRate, AVNumberOfChannelsKey: channels,
+         AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: true,
+         AVLinearPCMIsBigEndianKey: false]
+    }
     private let lock = NSLock()
+
+    /// What the two channels of the input carry. Wireless-mic receivers (DJI Mic, RØDE…) send two channels: either a
+    /// second mic, or a "safety track", the same voice 6 dB quieter. Letting macOS fold them into mono would add the
+    /// safety track on top of the voice (+0.5 dB, and it clips sooner). Instead: one voice → record the main channel,
+    /// keep the safety track on the side, and if the main channel clipped during the take, the take is saved from the
+    /// safety track (6 dB lower, not clipped); two voices → mix them.
+    enum Channels { case unknown, same, safety, two }
+    private var channels: Channels = .unknown     // capture queue only; reset when the mic changes
+    private var safetySamples: [Float] = []       // guarded by lock: the take's safety track (safety mode only)
+    private var mainClipped = false               // guarded by lock
+    private var takeURL: URL?
+    /// The last take was saved from the safety track because the main channel clipped.
+    @Published var usedSafetyTrack = false
     private var file: AVAudioFile?            // guarded by lock (written on the capture queue)
     private var framesWritten: AVAudioFramePosition = 0
     private var holdUntil = Date.distantPast
@@ -46,15 +68,7 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
 
     override init() {
         super.init()
-        output.audioSettings = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: Recorder.fileRate,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsFloatKey: true,
-            AVLinearPCMIsNonInterleaved: false,
-            AVLinearPCMIsBigEndianKey: false,
-        ]
+        output.audioSettings = Self.captureSettings(channels: 1)
         output.setSampleBufferDelegate(self, queue: queue)
     }
 
@@ -116,6 +130,14 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
             return
         }
         session.addInput(input)
+        // two-channel inputs (wireless receivers) are handled in toMono; anything wider just uses its first two
+        let devChannels = Self.inputChannels(dev)
+        let want = devChannels >= 2 ? 2 : 1
+        output.audioSettings = Self.captureSettings(channels: want)
+        queue.async { [weak self] in
+            self?.inChannels = want
+            self?.channels = .unknown
+        }
         if !session.outputs.contains(output), session.canAddOutput(output) { session.addOutput(output) }
         session.commitConfiguration()
         queue.async { [weak self] in
@@ -130,6 +152,11 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
         deviceRate = AudioDevices.coreAudioID(uid: dev.uniqueID).map(AudioDevices.sampleRate) ?? Recorder.fileRate
     }
 
+    static func inputChannels(_ dev: AVCaptureDevice) -> Int {
+        guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(dev.activeFormat.formatDescription) else { return 1 }
+        return Int(asbd.pointee.mChannelsPerFrame)
+    }
+
     func stop() {
         if isRecording { _ = stopTake() }
         queue.async { [weak self] in self?.session.stopRunning() }
@@ -138,13 +165,47 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
 
     // MARK: capture queue
 
+    private func toMono(_ l: UnsafePointer<Float>, _ r: UnsafePointer<Float>, _ out: UnsafeMutablePointer<Float>, _ n: Int) {
+        if channels == .unknown {
+            // decide once, on the first buffer with sound in it (silence can't tell the cases apart)
+            var el: Float = 0, eSame: Float = 0, eSafety: Float = 0
+            for i in 0..<n where abs(l[i]) < 0.99 {   // clipped samples would hide the relationship
+                el += l[i] * l[i]
+                eSame += (l[i] - r[i]) * (l[i] - r[i])
+                eSafety += (l[i] - 2 * r[i]) * (l[i] - 2 * r[i])
+            }
+            if el / Float(n) > 1e-6 {   // louder than −60 dBFS
+                channels = eSame < el * 0.01 ? .same : eSafety < el * 0.01 ? .safety : .two
+            }
+        }
+        switch channels {
+        case .two:
+            for i in 0..<n { out[i] = (l[i] + r[i]) * 0.7071 }
+        case .safety, .same, .unknown:
+            out.update(from: l, count: n)
+        }
+    }
+
     func captureOutput(_ output: AVCaptureOutput, didOutput sb: CMSampleBuffer, from connection: AVCaptureConnection) {
         let n = CMSampleBufferGetNumSamples(sb)
-        guard n > 0, let buf = AVAudioPCMBuffer(pcmFormat: fileFormat, frameCapacity: AVAudioFrameCount(n)) else { return }
+        let chans = inChannels
+        guard n > 0,
+              let inFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: Recorder.fileRate,
+                                           channels: AVAudioChannelCount(chans), interleaved: false),
+              let src = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: AVAudioFrameCount(n)),
+              let buf = AVAudioPCMBuffer(pcmFormat: fileFormat, frameCapacity: AVAudioFrameCount(n)) else { return }
+        src.frameLength = AVAudioFrameCount(n)
         buf.frameLength = AVAudioFrameCount(n)
         guard CMSampleBufferCopyPCMDataIntoAudioBufferList(sb, at: 0, frameCount: Int32(n),
-                                                           into: buf.mutableAudioBufferList) == noErr,
-              let data = buf.floatChannelData?[0] else { return }
+                                                           into: src.mutableAudioBufferList) == noErr,
+              let l = src.floatChannelData?[0], let data = buf.floatChannelData?[0] else { return }
+        var safety: UnsafePointer<Float>?
+        if chans == 2, let r = src.floatChannelData?[1] {
+            toMono(l, r, data, n)
+            if channels == .safety { safety = UnsafePointer(r) }
+        } else {
+            data.update(from: l, count: n)
+        }
         var sum: Float = 0, pk: Float = 0
         for i in 0..<n {
             let v = data[i]
@@ -158,6 +219,11 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
         if let f = file {
             try? f.write(from: buf)
             framesWritten += AVAudioFramePosition(n)
+            if let safety {
+                safetySamples.append(contentsOf: UnsafeBufferPointer(start: safety, count: n))
+                // same −0.5 dB line as the clip warning
+                if !mainClipped, (0..<n).contains(where: { abs(l[$0]) > 0.944 }) { mainClipped = true }
+            }
         }
         let written = framesWritten
         lock.unlock()
@@ -201,8 +267,12 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
         let f = try AVAudioFile(forWriting: url, settings: settings, commonFormat: .pcmFormatFloat32, interleaved: false)
         lock.lock()
         framesWritten = 0
+        safetySamples = []
+        mainClipped = false
         if withMovie { pendingFile = f } else { file = f }
         lock.unlock()
+        takeURL = url
+        usedSafetyTrack = false
         if withMovie, let movie { movieOutput.startRecording(to: movie, recordingDelegate: self) }
         takePeakDB = -120
         takeSeconds = 0
@@ -218,8 +288,18 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
         file = nil   // AVAudioFile flushes and closes when released
         pendingFile = nil
         let frames = framesWritten
+        let safety = mainClipped ? safetySamples : []
+        safetySamples = []
         lock.unlock()
         isRecording = false
+        // the main channel clipped: save the take from the safety track instead (same voice, 6 dB lower)
+        if !safety.isEmpty, let url = takeURL, (try? Combiner.write(safety, to: url)) != nil {
+            let pk = safety.reduce(Float(0)) { max($0, abs($1)) }
+            let peak = 20 * log10(max(pk, 1e-6))
+            usedSafetyTrack = true
+            clipped = peak > -0.5
+            takePeakDB = peak
+        }
         return (Double(frames) / Recorder.fileRate, takePeakDB, clipped)
     }
 
