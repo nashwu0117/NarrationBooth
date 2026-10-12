@@ -38,8 +38,8 @@ enum PaceLanguage: String, CaseIterable {
     func label(_ r: Double) -> String {
         switch self {
         case .zh: return T(String(format: "每秒 %.1f 字", r), String(format: "%.1f chars/s", r))
-        case .ja: return T("約每分鐘 \(Self.perMinute(r, 0.97)) 字", "≈ \(Self.perMinute(r, 0.97)) chars/min")
-        case .ko: return T("約每分鐘 \(Self.perMinute(r, 1.0)) 音節", "≈ \(Self.perMinute(r, 1.0)) syllables/min")
+        case .ja: return T("約每分鐘 %@ 字", "≈ %@ chars/min", "\(Self.perMinute(r, 0.97))")
+        case .ko: return T("約每分鐘 %@ 音節", "≈ %@ syllables/min", "\(Self.perMinute(r, 1.0))")
         case .en: return "\(Int((r * 43.8).rounded())) wpm"   // calibrated on typical narration lines, pauses included
         }
     }

@@ -88,7 +88,7 @@ struct SettingsView: View {
             }
             Section(T("步調提示", "Pacing guide")) {
                 Toggle(T("錄音時，字會照節奏從灰色變白色", "While recording, the line fills from grey to white at a steady pace"), isOn: $p.paceGuide)
-                LabeledContent(T("速度（\(p.paceLanguage.name)稿）", "Pace (\(p.paceLanguage.name) script)")) {
+                LabeledContent(T("速度（%@稿）", "Pace (%@ script)", p.paceLanguage.name)) {
                     Slider(value: $p.currentRate, in: p.paceLanguage.range, step: p.paceLanguage == .en ? 0.05 : 0.1) { Text("") }
                         .frame(width: 160)
                     Text(p.paceLanguage.label(p.currentRate)).monospacedDigit().frame(width: 130, alignment: .leading)

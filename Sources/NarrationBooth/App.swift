@@ -31,8 +31,9 @@ struct NarrationBoothApp: App {
                 Button(T("存一份稿子範本…", "Save Script Template…")) { session.saveTemplate() }
             }
             CommandMenu(T("語言", "Language")) {
-                Button("繁體中文") { setLanguage("zh") }
-                Button("English") { setLanguage("en") }
+                ForEach(UILanguage.allCases, id: \.self) { l in
+                    Button((l == UILanguage.current ? "✓ " : "") + l.nativeName) { setLanguage(l) }
+                }
             }
             CommandGroup(replacing: .newItem) {
                 Button(T("開啟稿子…", "Open Script…")) { session.openPanel() }.keyboardShortcut("o")
@@ -44,12 +45,27 @@ struct NarrationBoothApp: App {
 }
 
 /// Saves the choice and asks to relaunch (the UI language is read once at launch).
-func setLanguage(_ code: String) {
-    UserDefaults.standard.set(code, forKey: "uiLanguage")
+func setLanguage(_ l: UILanguage) {
+    UserDefaults.standard.set(l.rawValue, forKey: "uiLanguage")
+    // macOS's own menu items (Quit, Hide, Edit, Window…) follow AppleLanguages for this app
+    UserDefaults.standard.set([l == .zhHant ? "zh-Hant" : l.rawValue], forKey: "AppleLanguages")
     let a = NSAlert()
-    a.messageText = code == "zh" ? "重新開啟後換成繁體中文" : "Relaunch to switch to English"
+    a.messageText = l.nativeName
+    a.informativeText = relaunchText[l] ?? "Quit and reopen NarrationBooth to switch the language."
     a.runModal()
 }
+
+/// In the language being switched to (the rest of the UI only changes after a relaunch).
+private let relaunchText: [UILanguage: String] = [
+    .en: "Quit and reopen NarrationBooth to switch the language.",
+    .zhHant: "結束並重新打開 NarrationBooth 就會換成繁體中文。",
+    .zhHans: "退出并重新打开 NarrationBooth 即可切换为简体中文。",
+    .ja: "NarrationBooth を終了して開き直すと、日本語に切り替わります。",
+    .ko: "NarrationBooth를 종료했다가 다시 열면 한국어로 바뀝니다.",
+    .es: "Cierra y vuelve a abrir NarrationBooth para cambiar el idioma.",
+    .fr: "Quittez puis rouvrez NarrationBooth pour changer de langue.",
+    .de: "Beende NarrationBooth und öffne es erneut, um die Sprache zu wechseln.",
+]
 
 // MARK: - palette
 
@@ -255,7 +271,7 @@ struct TopBar: View {
                 Text(formatLabel).font(.system(size: 11, design: .monospaced))
                     .foregroundStyle(s.micIsLowQuality ? Booth.amber : Booth.dim).lineLimit(1)
                     .help(s.micIsLowQuality
-                          ? T("麥克風只送出 \(Int(s.micRate / 1000)) kHz，存成 48 kHz 也補不回高頻", "The mic only delivers \(Int(s.micRate / 1000)) kHz; saving at 48 kHz can't bring the highs back")
+                          ? T("麥克風只送出 %@ kHz，存成 48 kHz 也補不回高頻", "The mic only delivers %@ kHz; saving at 48 kHz can't bring the highs back", "\(Int(s.micRate / 1000))")
                           : T("錄音格式", "Recording format"))
             }
         }
@@ -282,7 +298,7 @@ struct BlockList: View {
                 Text(prefs.unit.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Booth.dim)
                 if !s.slots.isEmpty {
                     ProgressView(value: Double(s.doneCount), total: Double(s.slots.count)).tint(Booth.green)
-                    Text(T("錄好 \(s.doneCount) / \(s.slots.count)", "Recorded \(s.doneCount) / \(s.slots.count)"))
+                    Text(T("錄好 %@ / %@", "Recorded %@ / %@", "\(s.doneCount)", "\(s.slots.count)"))
                         .font(.system(size: 12, design: .monospaced))
                 }
             }
@@ -627,9 +643,22 @@ struct Controls: View {
     }
 
     var body: some View {
+        ViewThatFits(in: .horizontal) {
+            row(compact: false)
+            row(compact: true)
+        }
+        .controlSize(.large)
+        .padding(.horizontal, 28).padding(.vertical, 14)
+        .background(Booth.panel)
+    }
+
+    /// The button row; `compact` shows the secondary buttons as icons only (their names stay as tooltips).
+    @ViewBuilder
+    func row(compact: Bool) -> some View {
         HStack(spacing: 12) {
             Button { s.go(-1) } label: { Label(T("上一個", "Previous"), systemImage: "chevron.left") }
                 .keyboardShortcut(.leftArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
+                .help(T("上一個（←）", "Previous (←)"))
             Button { s.space() } label: {
                 HStack(spacing: 10) {
                     Image(systemName: rec.isRecording ? (s.unit == .script ? "forward.fill" : "stop.fill") : "record.circle")
@@ -642,6 +671,7 @@ struct Controls: View {
             .disabled(s.current == nil || !rec.running || s.combining != nil)
             Button { s.go(1) } label: { Label(T("下一個", "Next"), systemImage: "chevron.right") }
                 .keyboardShortcut(.rightArrow, modifiers: []).disabled(rec.isRecording).fixedSize()
+                .help(T("下一個（→）", "Next (→)"))
             // Esc stops any take (in whole-script mode it ends the take early)
             Button("") { s.stopRecording() }.keyboardShortcut(.escape, modifiers: []).opacity(0).frame(width: 0)
             Spacer()
@@ -662,6 +692,7 @@ struct Controls: View {
             if s.reviewing {
                 Button { s.rerecord() } label: { Label(T("重錄這句（R）", "Re-record (R)"), systemImage: "arrow.counterclockwise") }
                     .keyboardShortcut("r", modifiers: []).fixedSize()
+                    .help(T("重錄這句（R）", "Re-record (R)"))
             }
             Button { s.playCurrent() } label: {
                 Label(rec.isPlaying ? T("停止（P）", "Stop (P)") : T("播放聽聽看（P）", "Play it back (P)"),
@@ -670,10 +701,22 @@ struct Controls: View {
             .keyboardShortcut("p", modifiers: [])
             .buttonStyle(.borderedProminent).tint(s.reviewing ? Booth.green.opacity(0.8) : Color.white.opacity(0.18))
             .disabled(rec.isRecording || s.shownTake == nil).fixedSize()
+            .help(T("播放剛錄的（P）", "Play the take (P)"))
         }
-        .controlSize(.large)
-        .padding(.horizontal, 28).padding(.vertical, 14)
-        .background(Booth.panel)
+        .labelStyle(CompactLabelStyle(compact: compact))
+    }
+}
+
+struct CompactLabelStyle: LabelStyle {
+    let compact: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if compact {
+            // the system icon-only style keeps the title for VoiceOver
+            Label { configuration.title } icon: { configuration.icon }.labelStyle(.iconOnly)
+        } else {
+            HStack(spacing: 6) { configuration.icon; configuration.title }
+        }
     }
 }
 
@@ -684,8 +727,8 @@ struct PaceBadge: View {
     var body: some View {
         let pct = Int(((ratio - 1) * 100).rounded())
         let (text, color): (String, Color) = {
-            if ratio > 1.12 { return (T("比建議快 \(pct)%，可以再慢一點", "\(pct)% faster than the guide, slow down a little"), Booth.amber) }
-            if ratio < 0.8 { return (T("比建議慢 \(-pct)%", "\(-pct)% slower than the guide"), Booth.dim) }
+            if ratio > 1.12 { return (T("比建議快 %@%%，可以再慢一點", "%@%% faster than the guide, slow down a little", "\(pct)"), Booth.amber) }
+            if ratio < 0.8 { return (T("比建議慢 %@%%", "%@%% slower than the guide", "\(-pct)"), Booth.dim) }
             return (T("速度剛好", "On pace"), Booth.green)
         }()
         Text("· " + text).font(.system(size: 12, design: .monospaced)).foregroundStyle(color)

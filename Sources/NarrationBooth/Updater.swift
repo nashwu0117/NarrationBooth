@@ -52,7 +52,7 @@ enum Updater {
                 offer(rel)
             } else if userInitiated {
                 alert(T("已經是最新版", "You're up to date"),
-                      T("NarrationBooth \(currentVersion) 是最新版本。", "NarrationBooth \(currentVersion) is the latest version."))
+                      T("NarrationBooth %@ 是最新版本。", "NarrationBooth %@ is the latest version.", currentVersion))
             }
         } catch {
             if userInitiated {
@@ -76,9 +76,9 @@ enum Updater {
     @MainActor
     private static func offer(_ rel: Release) {
         let a = NSAlert()
-        a.messageText = T("有新版本：NarrationBooth \(rel.version)", "NarrationBooth \(rel.version) is available")
+        a.messageText = T("有新版本：NarrationBooth %@", "NarrationBooth %@ is available", rel.version)
         let notes = (rel.body ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        a.informativeText = T("你現在用的是 \(currentVersion)。", "You have \(currentVersion).")
+        a.informativeText = T("你現在用的是 %@。", "You have %@.", currentVersion)
             + (notes.isEmpty ? "" : "\n\n" + String(notes.prefix(900)))
             + T("\n\n下載後打開 ZIP，把 NarrationBooth 拖到「應用程式」資料夾取代舊版（第一次一樣要到「隱私權與安全性」按「強制打開」）。",
                 "\n\nUnzip the download and drag NarrationBooth into Applications to replace this version (then allow it once under Privacy & Security → Open Anyway).")

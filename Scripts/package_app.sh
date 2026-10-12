@@ -15,6 +15,9 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 BIN=$(swift build -c release --arch "$ARCH" --show-bin-path)
 cp "$BIN/$EXE" "$APP/Contents/MacOS/$EXE"
 cp "$ROOT/Resources/AppIcon.icns" "$APP/Contents/Resources/Icon.icns"   # icon source: Scripts/draw_icon.swift
+cp -R "$ROOT/Localizations" "$APP/Contents/Resources/Localizations"      # UI translations (see Localizations/README.md)
+# empty .lproj folders tell macOS which languages the app speaks, so its own menus (Quit, Edit, Window…) follow along
+for l in en zh-Hant zh-Hans ja ko es fr de; do mkdir -p "$APP/Contents/Resources/$l.lproj"; done
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,6 +32,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleShortVersionString</key><string>${MARKETING_VERSION}</string>
     <key>CFBundleVersion</key><string>${BUILD_NUMBER}</string>
     <key>CFBundleIconFile</key><string>Icon</string>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key>
+    <array><string>en</string><string>zh-Hant</string><string>zh-Hans</string><string>ja</string><string>ko</string><string>es</string><string>fr</string><string>de</string></array>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSMicrophoneUsageDescription</key><string>NarrationBooth records your voice with the microphone.</string>
@@ -36,7 +42,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleDocumentTypes</key>
     <array>
         <dict>
-            <key>CFBundleTypeName</key><string>錄音稿</string>
+            <key>CFBundleTypeName</key><string>Narration Script</string>
             <key>CFBundleTypeRole</key><string>Viewer</string>
             <key>LSHandlerRank</key><string>Alternate</string>
             <key>LSItemContentTypes</key>

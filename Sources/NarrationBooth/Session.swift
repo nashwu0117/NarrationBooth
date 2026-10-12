@@ -151,7 +151,7 @@ final class Session: ObservableObject {
                 self.refreshDevices()
                 guard dev.hasMediaType(.audio), !self.rec.isRecording, self.combining == nil else { return }
                 self.selectMic(dev.uniqueID, remember: true)
-                self.message = T("已切換到 \(dev.localizedName)", "Switched to \(dev.localizedName)")
+                self.message = T("已切換到 %@", "Switched to %@", dev.localizedName)
             }
         }
         nc.addObserver(forName: AVCaptureDevice.wasDisconnectedNotification, object: nil, queue: .main) { [weak self] n in
@@ -161,7 +161,7 @@ final class Session: ObservableObject {
             self.refreshDevices()
             if wasMine {
                 self.selectMic(AVCaptureDevice.default(for: .audio)?.uniqueID)
-                self.message = T("\(dev.localizedName) 斷線了，改用預設麥克風", "\(dev.localizedName) disconnected; using the default mic")
+                self.message = T("%@ 斷線了，改用預設麥克風", "%@ disconnected; using the default mic", dev.localizedName)
             }
             if dev.uniqueID == self.cameraUID {
                 self.cameraUID = self.cameras.first?.id
@@ -191,8 +191,9 @@ final class Session: ObservableObject {
             let sr = AudioDevices.sampleRate(id)
             micRate = sr
             if micIsLowQuality {
-                message = T("注意：這支麥克風現在只有 \(Int(sr / 1000)) kHz（藍牙是電話音質）。想要好音質請用 USB／線材接收器，或改用內建麥克風。",
-                            "Heads-up: this mic only delivers \(Int(sr / 1000)) kHz right now (Bluetooth runs at phone quality). For good sound, connect its receiver by USB or cable, or use the built-in mic.")
+                message = T("注意：這支麥克風現在只有 %@ kHz（藍牙是電話音質）。想要好音質請用 USB／線材接收器，或改用內建麥克風。",
+                            "Heads-up: this mic only delivers %@ kHz right now (Bluetooth runs at phone quality). For good sound, connect its receiver by USB or cable, or use the built-in mic.",
+                            "\(Int(sr / 1000))")
             }
         } else {
             canSetVolume = false
@@ -573,7 +574,7 @@ final class Session: ObservableObject {
         var videoOK = true
         do {
             for (n, (b, src)) in all.enumerated() {
-                combining = T("合併中… \(n + 1)/\(all.count)", "Combining… \(n + 1)/\(all.count)")
+                combining = T("合併中… %@/%@", "Combining… %@/%@", "\(n + 1)", "\(all.count)")
                 var blockPieces: [Piece] = []
                 for (k, s) in src.enumerated() {
                     if cache[s.wav] == nil { cache[s.wav] = try Combiner.read(s.wav) }
@@ -605,9 +606,10 @@ final class Session: ObservableObject {
             }
             combinedAt = Date()
             let missing = blocks.count - all.count
-            message = T("合併好了：\(all.count) 個段落 + 整份 \(String(format: "%.0f", dur)) 秒的 \(scriptName)_full.wav",
-                        "Combined: \(all.count) blocks + \(scriptName)_full.wav (\(String(format: "%.0f", dur)) s)")
-                + (missing > 0 ? T("（還有 \(missing) 段沒錄）", " (\(missing) blocks not recorded yet)") : "")
+            message = T("合併好了：%1$@ 個段落 + 整份 %3$@ 秒的 %2$@_full.wav",
+                        "Combined: %1$@ blocks + %2$@_full.wav (%3$@ s)",
+                        "\(all.count)", scriptName, String(format: "%.0f", dur))
+                + (missing > 0 ? T("（還有 %@ 段沒錄）", " (%@ blocks not recorded yet)", "\(missing)") : "")
         } catch {
             message = T("合併失敗：", "Combining failed: ") + error.localizedDescription
         }

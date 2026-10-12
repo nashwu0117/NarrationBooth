@@ -176,7 +176,9 @@ track instead. Two transmitters in stereo mode are mixed into the mono file.
 
 ## Language
 
-The interface is in English. Traditional Chinese is available from the **Language** menu (relaunch to apply).
+The interface speaks English, 繁體中文, 简体中文, 日本語, 한국어, Español, Français and Deutsch. It follows your Mac's
+language on first launch (English if yours isn't on the list); switch any time from the **Language** menu and relaunch.
+Translations are plain JSON files in [`Localizations/`](Localizations/README.md). Fixes and new languages are welcome.
 
 ---
 
@@ -220,7 +222,7 @@ The interface is in English. Traditional Chinese is available from the **Languag
 >
 > **安全音軌（防爆音）**：接收器如果有開安全音軌（第二聲道是小 6 dB 的同一個聲音，例如 DJI Mic），App 會自動認出來，只錄主聲道；某一句爆音了，那一句就自動改用安全音軌存檔。兩個發射器的立體聲模式則會混成單聲道。
 
-介面預設英文，可以從選單「Language → 繁體中文」切換。
+介面支援 English、繁體中文、简体中文、日本語、한국어、Español、Français、Deutsch。第一次打開會跟著電腦的系統語言（不在清單裡就用英文），之後可以從選單「Language」切換，重新打開 App 後生效。翻譯檔在 [`Localizations/`](Localizations/README.md)，歡迎幫忙修正或新增語言。
 
 ## License
 
