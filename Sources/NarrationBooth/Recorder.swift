@@ -331,12 +331,25 @@ final class Recorder: NSObject, ObservableObject, AVCaptureAudioDataOutputSample
 
     // MARK: playback
 
+    @Published private(set) var isPlaying = false
+    private var playTimer: Timer?
+
     func play(_ url: URL) {
         player?.stop()
         player = try? AVAudioPlayer(contentsOf: url)
         player?.play()
+        isPlaying = player?.isPlaying ?? false
+        // AVAudioPlayer has no Combine hook for "finished": poll so the Play/Stop button flips back
+        playTimer?.invalidate()
+        playTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            if !(self.player?.isPlaying ?? false) { self.isPlaying = false; t.invalidate() }
+        }
     }
 
-    func stopPlayback() { player?.stop() }
-    var isPlaying: Bool { player?.isPlaying ?? false }
+    func stopPlayback() {
+        player?.stop()
+        isPlaying = false
+        playTimer?.invalidate()
+    }
 }

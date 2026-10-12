@@ -101,7 +101,7 @@ Choose how much you record per take from the menu in the top bar or in **Setting
 
 | Mode | How it works |
 |---|---|
-| **One sentence per take** (default) | Read a sentence, press Space: it stops and jumps to the next sentence. A slip only costs that sentence. |
+| **One sentence per take** (default) | Read a sentence, press Space to stop. Check it (P plays it, R re-records it), then Space moves to the next sentence and starts recording. A slip only costs that sentence. Click any sentence in the prompter to jump to it. |
 | **One block per take** | Read a whole `VO_` block, press Space to stop and move to the next block. |
 | **Whole script in one take** | Press Space once to start, then Space after each sentence to move the prompter on. The recording never stops; after the last sentence Space ends the take (Esc stops any time). |
 
@@ -112,10 +112,11 @@ you recorded, never inserted silence, so audio and video share exactly the same 
 
 | Key | Action |
 |---|---|
-| Space | Record / stop and move to the next take (whole-script mode: next sentence) |
+| Space | Record / stop; after checking a take, go to the next line and record it (whole-script mode: next sentence) |
+| P | Play the take back |
+| R | Re-record the take you just made |
 | Esc | Stop the current take |
-| ← → | Previous / next take |
-| P | Play the current take |
+| ← → | Previous / next line (or click a line) |
 | ⌘J | Combine takes now |
 | ⌘O | Open a script |
 | ⇧⌘O | Choose the output folder |
@@ -135,8 +136,9 @@ Each script gets its own folder:
 └── session.json           length, peak level and clipping flag of each take
 ```
 
-Tips: speak at your normal pace, keep peaks in the green zone, and if you stumble, press Space twice
-(stop, then record again) to redo that take. Re-recording one sentence and combining again is enough.
+Tips: speak at your normal pace and keep peaks in the green zone. If you stumble, stop, press R and say it again; the earlier
+take is kept in `_old_takes/`. A tap shorter than 0.3 s is ignored and never replaces a take. Don't want to stop and check
+every take? Turn it off in Settings and Space goes straight on to the next line (it can also play each take back automatically).
 
 ## Microphones
 
@@ -165,7 +167,7 @@ The interface is in English. Traditional Chinese is available from the **Languag
 給 Mac 用的提詞錄音工具，適合錄旁白和真人出鏡的知識型影片。打開稿子，一句一句（或一段一段、整份一次）唸，錄完自動接成可以直接剪的高音質檔案。
 
 - **三種錄法**（上方選單或「設定」⌘, 切換）：
-  - **一句一錄**（預設）：唸完一句按空白鍵就停，自動跳下一句，唸錯只要重錄那一句。
+  - **一句一錄**（預設）：唸完一句按空白鍵停，先聽聽看（P 播放、R 重錄），沒問題再按空白鍵錄下一句。唸錯只要重錄那一句，點稿子上任何一句可以直接跳過去。不想每句都停下來聽，可以在設定關掉。
   - **一段一錄**：每個 `VO_` 段落錄一次。
   - **整份一次錄**：按一次開始，每唸完一句按空白鍵換下一句，錄音不中斷，最後一句再按一次結束（Esc 隨時可停）。
 - **全部錄完自動合併**：每段一個 `VO_01a.wav`，再加上整份的 `<稿子名>_full.wav`（鏡頭模式也會合併 `.mov`）。會修掉每次錄音前後多餘的空白，句子之間的間隔用的是你錄到的真實環境音，聲音和影片用同樣的剪點不會跑掉。也可以隨時按「合併」（⌘J）。原始錄音留在 `takes/` 資料夾。

@@ -18,8 +18,8 @@ enum TakeUnit: String, CaseIterable, Identifiable {
     var detail: String {
         switch self {
         case .sentence:
-            return T("唸完一句按空白鍵停，自動跳下一句。唸錯只要重錄那一句。",
-                     "Press Space after each sentence; it moves to the next one. A slip only costs that sentence.")
+            return T("唸完一句按空白鍵停，聽一下沒問題再按空白鍵錄下一句。唸錯只要重錄那一句（點稿子上的任一句可以直接跳過去）。",
+                     "Press Space after each sentence, check it, then Space again records the next one. A slip only costs that sentence (click any line to jump to it).")
         case .block:
             return T("每個 VO_ 段落錄一次，按空白鍵停止並跳到下一段。",
                      "Record each VO_ block in one go; Space stops and moves to the next block.")
@@ -37,6 +37,8 @@ final class Prefs: ObservableObject {
 
     @Published var unit: TakeUnit { didSet { d.set(unit.rawValue, forKey: "takeUnit") } }
     @Published var autoCombine: Bool { didSet { d.set(autoCombine, forKey: "autoCombine") } }
+    @Published var reviewTakes: Bool { didSet { d.set(reviewTakes, forKey: "reviewTakes") } }
+    @Published var autoPlay: Bool { didSet { d.set(autoPlay, forKey: "autoPlay") } }
     @Published var trimSilence: Bool { didSet { d.set(trimSilence, forKey: "trimSilence") } }
     @Published var sentenceGap: Double { didSet { d.set(sentenceGap, forKey: "sentenceGap") } }
     @Published var blockGap: Double { didSet { d.set(blockGap, forKey: "blockGap") } }
@@ -44,6 +46,8 @@ final class Prefs: ObservableObject {
     private init() {
         unit = TakeUnit(rawValue: d.string(forKey: "takeUnit") ?? "") ?? .sentence
         autoCombine = d.object(forKey: "autoCombine") as? Bool ?? true
+        reviewTakes = d.object(forKey: "reviewTakes") as? Bool ?? true
+        autoPlay = d.object(forKey: "autoPlay") as? Bool ?? false
         trimSilence = d.object(forKey: "trimSilence") as? Bool ?? true
         sentenceGap = d.object(forKey: "sentenceGap") as? Double ?? 0.35
         blockGap = d.object(forKey: "blockGap") as? Double ?? 0.8
@@ -61,6 +65,10 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.radioGroup)
                 Text(p.unit.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Toggle(T("每錄完一次先停下來讓我聽（P 播放、R 重錄、空白鍵下一句）",
+                         "Stop after each take so I can check it (P plays, R re-records, Space goes on)"), isOn: $p.reviewTakes)
+                Toggle(T("錄完自動播放一次", "Play each take back automatically"), isOn: $p.autoPlay)
+                    .disabled(!p.reviewTakes)
             }
             Section(T("合併", "Combining")) {
                 Toggle(T("全部錄完後自動合併", "Combine automatically when every take is done"), isOn: $p.autoCombine)

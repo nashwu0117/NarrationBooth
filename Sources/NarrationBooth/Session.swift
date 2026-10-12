@@ -346,8 +346,11 @@ final class Session: ObservableObject {
 
     // MARK: recording
 
-    /// Space. Sentence / block mode: start, or stop and move on. Whole-script mode: start, then next line, and after
-    /// the last line stop.
+    /// Space.
+    /// - Sentence / block mode, review on (default): start → stop (stay on the take so you can play it with P or
+    ///   re-record with R) → Space again moves to the next line and starts recording it (if it isn't recorded yet).
+    /// - Review off: start → stop and move to the next line.
+    /// - Whole-script mode: start, then next line, and after the last line stop.
     func space() {
         if unit == .script && rec.isRecording {
             if cursor < flatLines.count - 1 {
@@ -358,13 +361,49 @@ final class Session: ObservableObject {
             }
             return
         }
-        rec.isRecording ? stopRecording() : startRecording()
+        if rec.isRecording { stopRecording(); return }
+        if reviewing && unit != .script {
+            reviewing = false
+            guard advance() else { return }     // past the last line: nothing more to record
+            // only start right away on a line that still needs a take; a recorded one is just shown
+            if let c = current, takes[c.id] != nil { return }
+        }
+        startRecording()
     }
+
+    /// The take that was just recorded is waiting to be listened to (P), re-recorded (R) or accepted (Space / →).
+    @Published var reviewing = false
+
+    /// Re-record the line on screen (R, or the button while reviewing).
+    func rerecord() {
+        guard !rec.isRecording else { return }
+        reviewing = false
+        startRecording()
+    }
+
+    /// Moves to the next line in script order (never skips lines, recorded or not). At the end it goes to the first
+    /// line still missing, if any. Returns false when there is nowhere to go.
+    @discardableResult
+    func nextNeedsTake() -> Bool {
+        let next = index + 1 < slots.count ? index + 1 : slots.indices.first { takes[slots[$0].id] == nil }
+        return next.map { takes[slots[$0].id] == nil } ?? false
+    }
+
+    private func advance() -> Bool {
+        if index + 1 < slots.count { index += 1; return true }
+        if let missing = slots.indices.first(where: { takes[slots[$0].id] == nil }) { index = missing; return true }
+        message = T("全部錄完了 ✓  要重錄哪一句，點它或用 ← → 選。", "Everything is recorded ✓  To redo a line, click it or pick it with ← →.")
+        return false
+    }
+
+    private var pendingOld: (slot: String, moved: [(from: URL, to: URL)], info: TakeInfo?)?
 
     func startRecording() {
         guard let slot = current, let url = takeURL(slot.id), combining == nil else { return }
         rec.stopPlayback()
-        keepOldTake(slot.id)
+        reviewing = false
+        pendingOld = (slot.id, keepOldTake(slot.id), takes[slot.id])
+        takes[slot.id] = nil
         if unit == .script {
             cursor = 0
             markers = [0]
@@ -379,9 +418,15 @@ final class Session: ObservableObject {
     func stopRecording() {
         guard rec.isRecording, let slot = current, let url = takeURL(slot.id) else { return }
         let (sec, peak, clip) = rec.stopTake()
-        if sec < 0.3 {  // an accidental tap: don't keep it
+        let old = pendingOld
+        pendingOld = nil
+        if sec < 0.3 {  // an accidental tap: throw it away and put the previous take back
             try? FileManager.default.removeItem(at: url)
             try? FileManager.default.removeItem(at: url.deletingPathExtension().appendingPathExtension("mov"))
+            if let old, old.slot == slot.id {
+                for m in old.moved { try? FileManager.default.moveItem(at: m.to, to: m.from) }
+                takes[slot.id] = old.info
+            }
             return
         }
         if rec.usedSafetyTrack {
@@ -390,27 +435,41 @@ final class Session: ObservableObject {
         takes[slot.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode,
                                   markers: unit == .script ? markers : nil)
         save()
-        if allDone {
-            if prefs.autoCombine { Task { await combine() } }
-        } else if let next = slots.indices.first(where: { $0 > index && takes[slots[$0].id] == nil })
-                    ?? slots.indices.first(where: { takes[slots[$0].id] == nil }) {
-            index = next
+        if allDone && prefs.autoCombine { Task { await combine() } }   // re-recording a line later combines again
+        if unit == .script { return }
+        if prefs.reviewTakes {
+            reviewing = true
+            if prefs.autoPlay { rec.play(url) }
+        } else if !allDone {
+            advance()
         }
     }
 
-    /// Re-recording never destroys a take: the old files move to _old_takes/<slot>_<time>.wav/.mov
-    private func keepOldTake(_ slot: String) {
-        guard let dir = outDir else { return }
+    /// Re-recording never destroys a take: the old files move to _old_takes/<slot>_<time>.wav/.mov.
+    /// Returns what was moved, so an accidental tap can put it back.
+    private func keepOldTake(_ slot: String) -> [(from: URL, to: URL)] {
+        guard let dir = outDir else { return [] }
         let old = dir.appendingPathComponent("_old_takes", isDirectory: true)
         let f = DateFormatter()
         f.dateFormat = "HHmmss"
         let stamp = f.string(from: Date())
+        var moved: [(from: URL, to: URL)] = []
         for ext in ["wav", "mov"] {
             guard let url = takeURL(slot, ext), FileManager.default.fileExists(atPath: url.path) else { continue }
             try? FileManager.default.createDirectory(at: old, withIntermediateDirectories: true)
-            try? FileManager.default.moveItem(at: url, to: old.appendingPathComponent("\(slot)_\(stamp).\(ext)"))
+            let dest = old.appendingPathComponent("\(slot)_\(stamp).\(ext)")
+            if (try? FileManager.default.moveItem(at: url, to: dest)) != nil { moved.append((url, dest)) }
         }
-        takes[slot] = nil
+        return moved
+    }
+
+    /// Pick one line (click in the prompter).
+    func select(block b: Int, line: Int) {
+        guard !rec.isRecording, unit == .sentence else { return }
+        if let i = slots.firstIndex(where: { $0.blockIndex == b && $0.line == line }) {
+            index = i
+            reviewing = false
+        }
     }
 
     func playCurrent() {
@@ -420,6 +479,7 @@ final class Session: ObservableObject {
 
     func go(_ delta: Int) {
         guard !rec.isRecording else { return }
+        reviewing = false
         if unit == .script {
             cursor = max(0, min(flatLines.count - 1, cursor + delta))
         } else if !slots.isEmpty {
@@ -430,6 +490,7 @@ final class Session: ObservableObject {
     /// Jump to a block from the list.
     func select(block b: Int) {
         guard !rec.isRecording else { return }
+        reviewing = false
         if unit == .script {
             cursor = flatLines.firstIndex { $0.block == b } ?? cursor
         } else {

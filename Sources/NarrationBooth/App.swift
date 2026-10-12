@@ -397,9 +397,24 @@ struct CurrentCard: View {
             }
             ForEach(Array(block.lines.enumerated()), id: \.offset) { i, line in
                 let on = highlight == nil || highlight == i
-                breathText(line).font(.system(size: on ? (s.videoMode ? 30 : 34) : 22, weight: .medium)).lineSpacing(8)
-                    .opacity(on ? 1 : 0.32)
-                    .fixedSize(horizontal: false, vertical: true)
+                let done = s.unit == .sentence && s.takes["VO_\(block.id)_\(i + 1)"] != nil
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    if s.unit == .sentence {
+                        // recorded / not yet; click a line to jump to it
+                        Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: on ? 18 : 13)).foregroundStyle(done ? Booth.green : Booth.dim)
+                    }
+                    breathText(line).font(.system(size: on ? (s.videoMode ? 30 : 34) : 22, weight: .medium)).lineSpacing(8)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .opacity(on ? 1 : 0.32)
+                .contentShape(Rectangle())
+                .onTapGesture { s.select(block: s.blocks.firstIndex(of: block) ?? 0, line: i) }
+                .help(s.unit == .sentence ? T("點一下跳到這句", "Click to go to this line") : "")
+            }
+            if s.reviewing && !rec.isRecording {
+                Text(T("聽聽看：P 播放 · R 重錄 · 空白鍵下一句", "Check it: P to play · R to re-record · Space for the next line"))
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(Booth.green)
             }
         }
         .padding(24)
@@ -585,6 +600,9 @@ struct Controls: View {
             }
             return T("停止（空白鍵）→ 下一句", "Stop (Space) → next")
         }
+        if s.reviewing {
+            return s.nextNeedsTake() ? T("下一句，開始錄（空白鍵）", "Next line & record (Space)") : T("下一句（空白鍵）", "Next line (Space)")
+        }
         if s.shownTake != nil { return T("重錄（空白鍵）", "Re-record (Space)") }
         return s.unit == .script ? T("開始錄整份（空白鍵）", "Record the script (Space)") : T("開始錄（空白鍵）", "Record (Space)")
     }
@@ -622,9 +640,17 @@ struct Controls: View {
                 .help(T("把錄好的句子接成每段一個檔，再加上整份的 _full 檔", "Join the takes into one file per block plus a _full file"))
                 .disabled(rec.isRecording).fixedSize()
             }
-            Button { s.playCurrent() } label: { Label(T("試聽（P）", "Play (P)"), systemImage: "play.circle") }
-                .keyboardShortcut("p", modifiers: [])
-                .disabled(rec.isRecording || s.shownTake == nil).fixedSize()
+            if s.reviewing {
+                Button { s.rerecord() } label: { Label(T("重錄這句（R）", "Re-record (R)"), systemImage: "arrow.counterclockwise") }
+                    .keyboardShortcut("r", modifiers: []).fixedSize()
+            }
+            Button { s.playCurrent() } label: {
+                Label(rec.isPlaying ? T("停止（P）", "Stop (P)") : T("播放聽聽看（P）", "Play it back (P)"),
+                      systemImage: rec.isPlaying ? "stop.circle" : "play.circle.fill")
+            }
+            .keyboardShortcut("p", modifiers: [])
+            .buttonStyle(.borderedProminent).tint(s.reviewing ? Booth.green.opacity(0.8) : Color.white.opacity(0.18))
+            .disabled(rec.isRecording || s.shownTake == nil).fixedSize()
         }
         .controlSize(.large)
         .padding(.horizontal, 28).padding(.vertical, 14)
