@@ -700,7 +700,7 @@ struct PaceControl: View {
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "metronome").font(.system(size: 11))
-            Text(paceLabel(prefs.paceRate)).font(.system(size: 11, design: .monospaced))
+            Text(prefs.paceLanguage.label(prefs.currentRate)).font(.system(size: 11, design: .monospaced))
             Button { s.nudgePace(-0.1) } label: { Image(systemName: "minus") }
                 .keyboardShortcut("[", modifiers: []).help(T("慢一點（[）", "Slower ([)"))
             Button { s.nudgePace(0.1) } label: { Image(systemName: "plus") }

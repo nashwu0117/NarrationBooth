@@ -267,6 +267,7 @@ final class Session: ObservableObject {
             return
         }
         blocks = b
+        prefs.paceLanguage = PaceLanguage.detect(b.flatMap(\.lines))
         scriptName = url.deletingPathExtension().lastPathComponent
         setOutDir(outputBase.appendingPathComponent(scriptName + "_recordings", isDirectory: true))
         message = nil
@@ -383,13 +384,13 @@ final class Session: ObservableObject {
     func paceTimeline(block b: Int, line i: Int) -> PaceTimeline? {
         guard prefs.paceGuide, rec.isRecording, paceStart != nil, let sh = shown, sh.block == b,
               blocks[b].lines.indices.contains(i) else { return nil }
-        if unit == .block { return paceTimelines(blocks[b].lines, rate: prefs.paceRate)[i] }
-        return sh.line == i ? PaceTimeline(line: blocks[b].lines[i], rate: prefs.paceRate) : nil
+        if unit == .block { return paceTimelines(blocks[b].lines, rate: prefs.currentRate)[i] }
+        return sh.line == i ? PaceTimeline(line: blocks[b].lines[i], rate: prefs.currentRate) : nil
     }
 
     /// [ and ]: slower / faster.
     func nudgePace(_ d: Double) {
-        prefs.paceRate = (min(6.5, max(2.5, prefs.paceRate + d)) * 10).rounded() / 10
+        prefs.currentRate = prefs.currentRate + (prefs.paceLanguage == .en ? d / 2 : d)
     }
 
     /// Re-record the line on screen (R, or the button while reviewing).
@@ -455,7 +456,7 @@ final class Session: ObservableObject {
         var pace: Double?
         if unit != .script {
             let lines = slot.line.map { [blocks[slot.blockIndex].lines[$0]] } ?? blocks[slot.blockIndex].lines
-            pace = paceRatio(take: url, lines: lines, rate: prefs.paceRate)
+            pace = paceRatio(take: url, lines: lines, rate: prefs.currentRate)
         }
         takes[slot.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode,
                                   markers: unit == .script ? markers : nil, pace: pace)

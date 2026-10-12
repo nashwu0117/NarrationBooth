@@ -39,8 +39,19 @@ final class Prefs: ObservableObject {
     @Published var autoCombine: Bool { didSet { d.set(autoCombine, forKey: "autoCombine") } }
     @Published var reviewTakes: Bool { didSet { d.set(reviewTakes, forKey: "reviewTakes") } }
     @Published var paceGuide: Bool { didSet { d.set(paceGuide, forKey: "paceGuide") } }
-    /// Syllables per second (one CJK character = one syllable). 4.3 ≈ a relaxed, clear narration pace.
-    @Published var paceRate: Double { didSet { d.set(paceRate, forKey: "paceRate") } }
+    /// Pace per language, in syllables per second of speech (see PaceLanguage for the defaults).
+    @Published var paceRates: [String: Double] { didSet { d.set(paceRates, forKey: "paceRates") } }
+    /// Language of the open script (set by the session; picks which pace the slider shows).
+    @Published var paceLanguage: PaceLanguage = .zh
+
+    func rate(_ l: PaceLanguage) -> Double { paceRates[l.rawValue] ?? l.defaultRate }
+    func setRate(_ r: Double, _ l: PaceLanguage) {
+        paceRates[l.rawValue] = (min(l.range.upperBound, max(l.range.lowerBound, r)) * 100).rounded() / 100
+    }
+    var currentRate: Double {
+        get { rate(paceLanguage) }
+        set { setRate(newValue, paceLanguage) }
+    }
     @Published var autoPlay: Bool { didSet { d.set(autoPlay, forKey: "autoPlay") } }
     @Published var trimSilence: Bool { didSet { d.set(trimSilence, forKey: "trimSilence") } }
     @Published var sentenceGap: Double { didSet { d.set(sentenceGap, forKey: "sentenceGap") } }
@@ -51,7 +62,7 @@ final class Prefs: ObservableObject {
         autoCombine = d.object(forKey: "autoCombine") as? Bool ?? true
         reviewTakes = d.object(forKey: "reviewTakes") as? Bool ?? true
         paceGuide = d.object(forKey: "paceGuide") as? Bool ?? true
-        paceRate = d.object(forKey: "paceRate") as? Double ?? 4.3
+        paceRates = d.dictionary(forKey: "paceRates") as? [String: Double] ?? [:]
         autoPlay = d.object(forKey: "autoPlay") as? Bool ?? false
         trimSilence = d.object(forKey: "trimSilence") as? Bool ?? true
         sentenceGap = d.object(forKey: "sentenceGap") as? Double ?? 0.35
@@ -77,13 +88,16 @@ struct SettingsView: View {
             }
             Section(T("步調提示", "Pacing guide")) {
                 Toggle(T("錄音時，字會照節奏從灰色變白色", "While recording, the line fills from grey to white at a steady pace"), isOn: $p.paceGuide)
-                LabeledContent(T("速度", "Pace")) {
-                    Slider(value: $p.paceRate, in: 2.5...6.5, step: 0.1) { Text("") }.frame(width: 180)
-                    Text(paceLabel(p.paceRate)).monospacedDigit().frame(width: 110, alignment: .leading)
+                LabeledContent(T("速度（\(p.paceLanguage.name)稿）", "Pace (\(p.paceLanguage.name) script)")) {
+                    Slider(value: $p.currentRate, in: p.paceLanguage.range, step: p.paceLanguage == .en ? 0.05 : 0.1) { Text("") }
+                        .frame(width: 160)
+                    Text(p.paceLanguage.label(p.currentRate)).monospacedDigit().frame(width: 130, alignment: .leading)
+                    Button(T("預設", "Default")) { p.paceRates[p.paceLanguage.rawValue] = nil }
+                        .disabled(p.paceRates[p.paceLanguage.rawValue] == nil)
                 }
                 .disabled(!p.paceGuide)
-                Text(T("白色追到哪，就唸到哪，不要超過它。逗號、句號和換氣記號「／」會停一下。錄音時也可以按 [ 和 ] 調慢、調快。一般旁白大約每秒 4 到 4.5 字。",
-                       "Read where the white is, and don't get ahead of it. Commas, full stops and breath marks (／) hold for a moment. Press [ and ] while recording to go slower or faster. Relaxed narration is about 4–4.5 syllables a second."))
+                Text(T("白色追到哪，就唸到哪，不要超過它。逗號、句號和換氣記號「／」會停一下。錄音時也可以按 [ 和 ] 調慢、調快。打開稿子時會自動判斷語言，每種語言各自記住速度。預設值：中文每秒 4.3 字、英文每分鐘 150 字、日文和韓文每分鐘約 300 字，都是一般影片旁白清楚好懂的速度。",
+                       "Read where the white is, and don't get ahead of it. Commas, full stops and breath marks (／) hold for a moment. Press [ and ] while recording to go slower or faster. The script's language is detected when you open it, and each language keeps its own pace. Defaults: English 150 wpm, Chinese 4.3 characters/s, Japanese and Korean ≈ 300 per minute, the usual clear narration pace for videos."))
                     .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             Section(T("合併", "Combining")) {
@@ -103,12 +117,7 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(width: 520)
+        .frame(width: 600, height: 760)
         .padding(.vertical, 8)
     }
-}
-
-/// "4.3 字/秒" or "4.3 syl/s (≈ 170 wpm)"
-func paceLabel(_ r: Double) -> String {
-    T(String(format: "%.1f 字/秒", r), String(format: "%.1f syl/s (≈ %d wpm)", r, Int(r * 60 / 1.5)))
 }
