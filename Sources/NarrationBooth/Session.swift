@@ -16,6 +16,7 @@ struct TakeInfo: Codable, Hashable {
     var recordedAt: Date
     var video: Bool?
     var markers: [Double]?   // whole-script takes: start time of every line, in script order
+    var pace: Double?        // speed against the pacing guide: 1.0 on pace, 1.2 = 20 % faster
 }
 
 /// One recording unit in the current take mode.
@@ -356,6 +357,7 @@ final class Session: ObservableObject {
             if cursor < flatLines.count - 1 {
                 cursor += 1
                 markers.append(rec.takeSeconds)
+                paceStart = Date()
             } else {
                 stopRecording()
             }
@@ -373,6 +375,22 @@ final class Session: ObservableObject {
 
     /// The take that was just recorded is waiting to be listened to (P), re-recorded (R) or accepted (Space / →).
     @Published var reviewing = false
+
+    /// When the pacing guide started for the line(s) on screen (nil = not recording).
+    @Published var paceStart: Date?
+
+    /// The pacing guide for one line, when it is being recorded right now.
+    func paceTimeline(block b: Int, line i: Int) -> PaceTimeline? {
+        guard prefs.paceGuide, rec.isRecording, paceStart != nil, let sh = shown, sh.block == b,
+              blocks[b].lines.indices.contains(i) else { return nil }
+        if unit == .block { return paceTimelines(blocks[b].lines, rate: prefs.paceRate)[i] }
+        return sh.line == i ? PaceTimeline(line: blocks[b].lines[i], rate: prefs.paceRate) : nil
+    }
+
+    /// [ and ]: slower / faster.
+    func nudgePace(_ d: Double) {
+        prefs.paceRate = (min(6.5, max(2.5, prefs.paceRate + d)) * 10).rounded() / 10
+    }
 
     /// Re-record the line on screen (R, or the button while reviewing).
     func rerecord() {
@@ -410,6 +428,7 @@ final class Session: ObservableObject {
         }
         do {
             try rec.startTake(to: url, movie: videoMode ? takeURL(slot.id, "mov") : nil)
+            paceStart = Date()
         } catch {
             message = T("沒辦法建立錄音檔：", "Couldn't create the file: ") + error.localizedDescription
         }
@@ -418,6 +437,7 @@ final class Session: ObservableObject {
     func stopRecording() {
         guard rec.isRecording, let slot = current, let url = takeURL(slot.id) else { return }
         let (sec, peak, clip) = rec.stopTake()
+        paceStart = nil
         let old = pendingOld
         pendingOld = nil
         if sec < 0.3 {  // an accidental tap: throw it away and put the previous take back
@@ -432,8 +452,13 @@ final class Session: ObservableObject {
         if rec.usedSafetyTrack {
             message = T("這句爆音了，已自動改用麥克風的安全音軌（小 6 dB、沒爆音）。", "That take clipped, so it was saved from the mic's safety track (6 dB lower, not clipped).")
         }
+        var pace: Double?
+        if unit != .script {
+            let lines = slot.line.map { [blocks[slot.blockIndex].lines[$0]] } ?? blocks[slot.blockIndex].lines
+            pace = paceRatio(take: url, lines: lines, rate: prefs.paceRate)
+        }
         takes[slot.id] = TakeInfo(seconds: sec, peakDB: peak, clipped: clip, recordedAt: Date(), video: videoMode,
-                                  markers: unit == .script ? markers : nil)
+                                  markers: unit == .script ? markers : nil, pace: pace)
         save()
         if allDone && prefs.autoCombine { Task { await combine() } }   // re-recording a line later combines again
         if unit == .script { return }

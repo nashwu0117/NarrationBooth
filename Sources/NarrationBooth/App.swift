@@ -126,7 +126,14 @@ struct CameraPrompter: View {
                     VStack(spacing: 10) {
                         ForEach(Array(b.lines.enumerated()), id: \.offset) { i, line in
                             let on = sh.line == nil || sh.line == i
-                            breathText(line).font(.system(size: on ? 30 : 20, weight: .medium)).lineSpacing(6)
+                            Group {
+                                if let tl = s.paceTimeline(block: sh.block, line: i) {
+                                    PacedLine(timeline: tl, start: s.paceStart, size: 30)
+                                } else {
+                                    breathText(line).font(.system(size: on ? 30 : 20, weight: .medium))
+                                }
+                            }
+                            .lineSpacing(6)
                                 .opacity(on ? 1 : 0.32)
                                 .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         }
@@ -375,6 +382,8 @@ struct CurrentCard: View {
     @EnvironmentObject var rec: Recorder
     let block: ScriptBlock
     let highlight: Int?
+    @ObservedObject var prefs = Prefs.shared
+    var bIndex: Int { s.blocks.firstIndex(of: block) ?? 0 }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -391,8 +400,12 @@ struct CurrentCard: View {
                          + (t.clipped ? T(" · 有爆音，建議重錄", " · clipped, re-record") : ""))
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(t.clipped ? Booth.amber : Booth.green)
+                    if let p = t.pace { PaceBadge(ratio: p) }
                 }
                 Spacer()
+                if prefs.paceGuide {
+                    PaceControl()
+                }
                 Text(block.section).font(.system(size: 12)).foregroundStyle(Booth.dim)
             }
             ForEach(Array(block.lines.enumerated()), id: \.offset) { i, line in
@@ -404,12 +417,18 @@ struct CurrentCard: View {
                         Image(systemName: done ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: on ? 18 : 13)).foregroundStyle(done ? Booth.green : Booth.dim)
                     }
-                    breathText(line).font(.system(size: on ? (s.videoMode ? 30 : 34) : 22, weight: .medium)).lineSpacing(8)
-                        .fixedSize(horizontal: false, vertical: true)
+                    Group {
+                        if let tl = s.paceTimeline(block: bIndex, line: i) {
+                            PacedLine(timeline: tl, start: s.paceStart, size: s.videoMode ? 30 : 34)
+                        } else {
+                            breathText(line).font(.system(size: on ? (s.videoMode ? 30 : 34) : 22, weight: .medium))
+                        }
+                    }
+                    .lineSpacing(8).fixedSize(horizontal: false, vertical: true)
                 }
                 .opacity(on ? 1 : 0.32)
                 .contentShape(Rectangle())
-                .onTapGesture { s.select(block: s.blocks.firstIndex(of: block) ?? 0, line: i) }
+                .onTapGesture { s.select(block: bIndex, line: i) }
                 .help(s.unit == .sentence ? T("點一下跳到這句", "Click to go to this line") : "")
             }
             if s.reviewing && !rec.isRecording {
@@ -655,5 +674,40 @@ struct Controls: View {
         .controlSize(.large)
         .padding(.horizontal, 28).padding(.vertical, 14)
         .background(Booth.panel)
+    }
+}
+
+/// "On pace" / "18 % fast" after a take.
+struct PaceBadge: View {
+    let ratio: Double
+
+    var body: some View {
+        let pct = Int(((ratio - 1) * 100).rounded())
+        let (text, color): (String, Color) = {
+            if ratio > 1.12 { return (T("比建議快 \(pct)%，可以再慢一點", "\(pct)% faster than the guide, slow down a little"), Booth.amber) }
+            if ratio < 0.8 { return (T("比建議慢 \(-pct)%", "\(-pct)% slower than the guide"), Booth.dim) }
+            return (T("速度剛好", "On pace"), Booth.green)
+        }()
+        Text("· " + text).font(.system(size: 12, design: .monospaced)).foregroundStyle(color)
+    }
+}
+
+/// Pace readout with − / + (and the [ ] keys).
+struct PaceControl: View {
+    @EnvironmentObject var s: Session
+    @ObservedObject var prefs = Prefs.shared
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "metronome").font(.system(size: 11))
+            Text(paceLabel(prefs.paceRate)).font(.system(size: 11, design: .monospaced))
+            Button { s.nudgePace(-0.1) } label: { Image(systemName: "minus") }
+                .keyboardShortcut("[", modifiers: []).help(T("慢一點（[）", "Slower ([)"))
+            Button { s.nudgePace(0.1) } label: { Image(systemName: "plus") }
+                .keyboardShortcut("]", modifiers: []).help(T("快一點（]）", "Faster (])"))
+        }
+        .buttonStyle(.borderless).controlSize(.small)
+        .foregroundStyle(Booth.dim)
+        .help(T("步調提示的速度，設定裡可以關掉", "Speed of the pacing guide (turn it off in Settings)"))
     }
 }

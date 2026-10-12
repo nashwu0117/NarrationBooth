@@ -117,9 +117,18 @@ you recorded, never inserted silence, so audio and video share exactly the same 
 | R | Re-record the take you just made |
 | Esc | Stop the current take |
 | ← → | Previous / next line (or click a line) |
+| [ ] | Pacing guide slower / faster |
 | ⌘J | Combine takes now |
 | ⌘O | Open a script |
 | ⇧⌘O | Choose the output folder |
+
+### Pacing guide
+
+Reading too fast is the most common narration mistake. While a take records, the line fills from grey to white at a
+steady speaking pace, like karaoke lyrics: read where the white is and don't get ahead of it. Commas, full stops and
+breath marks (`／`) hold for a moment. The default, 4.3 syllables a second (one Chinese character = one syllable), is a
+relaxed, clear narration pace. Change it with the − / + next to the prompter, the `[` `]` keys, or in Settings, where the
+guide can also be turned off. After each take NarrationBooth tells you whether you were on pace or how much faster you read.
 
 ### Where files go
 
@@ -170,6 +179,7 @@ The interface is in English. Traditional Chinese is available from the **Languag
   - **一句一錄**（預設）：唸完一句按空白鍵停，先聽聽看（P 播放、R 重錄），沒問題再按空白鍵錄下一句。唸錯只要重錄那一句，點稿子上任何一句可以直接跳過去。不想每句都停下來聽，可以在設定關掉。
   - **一段一錄**：每個 `VO_` 段落錄一次。
   - **整份一次錄**：按一次開始，每唸完一句按空白鍵換下一句，錄音不中斷，最後一句再按一次結束（Esc 隨時可停）。
+- **步調提示（防止唸太快）**：錄音時，這一句的字會照節奏從灰色慢慢變白，像卡拉 OK 字幕，白色到哪就唸到哪，不要超過它。逗號、句號、換氣記號「／」會停一下。預設每秒 4.3 字（輕鬆清楚的旁白速度），可以用提詞旁的 − ＋、鍵盤 [ ]，或在設定裡調整、關掉。每錄完一句會告訴你速度剛好，還是比建議快了多少。
 - **全部錄完自動合併**：每段一個 `VO_01a.wav`，再加上整份的 `<稿子名>_full.wav`（鏡頭模式也會合併 `.mov`）。會修掉每次錄音前後多餘的空白，句子之間的間隔用的是你錄到的真實環境音，聲音和影片用同樣的剪點不會跑掉。也可以隨時按「合併」（⌘J）。原始錄音留在 `takes/` 資料夾。
 - **錄音室規格**：WAV 48 kHz、24-bit、單聲道，不做任何處理（沒有自動增益、沒有降噪），錄到的就是麥克風聽到的。
 - **鏡頭模式**：邊看稿邊對鏡頭講，同時錄 `VO_01a.mov`（HEVC，鏡頭支援就 4K，否則 1080p），和聲音檔同時開始。視窗會全螢幕，稿子縮成窄欄放在鏡頭正下方，唸稿時看起來就像在看鏡頭。

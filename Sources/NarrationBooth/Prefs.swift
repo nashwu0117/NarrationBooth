@@ -38,6 +38,9 @@ final class Prefs: ObservableObject {
     @Published var unit: TakeUnit { didSet { d.set(unit.rawValue, forKey: "takeUnit") } }
     @Published var autoCombine: Bool { didSet { d.set(autoCombine, forKey: "autoCombine") } }
     @Published var reviewTakes: Bool { didSet { d.set(reviewTakes, forKey: "reviewTakes") } }
+    @Published var paceGuide: Bool { didSet { d.set(paceGuide, forKey: "paceGuide") } }
+    /// Syllables per second (one CJK character = one syllable). 4.3 ≈ a relaxed, clear narration pace.
+    @Published var paceRate: Double { didSet { d.set(paceRate, forKey: "paceRate") } }
     @Published var autoPlay: Bool { didSet { d.set(autoPlay, forKey: "autoPlay") } }
     @Published var trimSilence: Bool { didSet { d.set(trimSilence, forKey: "trimSilence") } }
     @Published var sentenceGap: Double { didSet { d.set(sentenceGap, forKey: "sentenceGap") } }
@@ -47,6 +50,8 @@ final class Prefs: ObservableObject {
         unit = TakeUnit(rawValue: d.string(forKey: "takeUnit") ?? "") ?? .sentence
         autoCombine = d.object(forKey: "autoCombine") as? Bool ?? true
         reviewTakes = d.object(forKey: "reviewTakes") as? Bool ?? true
+        paceGuide = d.object(forKey: "paceGuide") as? Bool ?? true
+        paceRate = d.object(forKey: "paceRate") as? Double ?? 4.3
         autoPlay = d.object(forKey: "autoPlay") as? Bool ?? false
         trimSilence = d.object(forKey: "trimSilence") as? Bool ?? true
         sentenceGap = d.object(forKey: "sentenceGap") as? Double ?? 0.35
@@ -70,6 +75,17 @@ struct SettingsView: View {
                 Toggle(T("錄完自動播放一次", "Play each take back automatically"), isOn: $p.autoPlay)
                     .disabled(!p.reviewTakes)
             }
+            Section(T("步調提示", "Pacing guide")) {
+                Toggle(T("錄音時，字會照節奏從灰色變白色", "While recording, the line fills from grey to white at a steady pace"), isOn: $p.paceGuide)
+                LabeledContent(T("速度", "Pace")) {
+                    Slider(value: $p.paceRate, in: 2.5...6.5, step: 0.1) { Text("") }.frame(width: 180)
+                    Text(paceLabel(p.paceRate)).monospacedDigit().frame(width: 110, alignment: .leading)
+                }
+                .disabled(!p.paceGuide)
+                Text(T("白色追到哪，就唸到哪，不要超過它。逗號、句號和換氣記號「／」會停一下。錄音時也可以按 [ 和 ] 調慢、調快。一般旁白大約每秒 4 到 4.5 字。",
+                       "Read where the white is, and don't get ahead of it. Commas, full stops and breath marks (／) hold for a moment. Press [ and ] while recording to go slower or faster. Relaxed narration is about 4–4.5 syllables a second."))
+                    .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
             Section(T("合併", "Combining")) {
                 Toggle(T("全部錄完後自動合併", "Combine automatically when every take is done"), isOn: $p.autoCombine)
                 Toggle(T("修掉每一次錄音前後多餘的空白", "Trim the silence before and after each take"), isOn: $p.trimSilence)
@@ -90,4 +106,9 @@ struct SettingsView: View {
         .frame(width: 520)
         .padding(.vertical, 8)
     }
+}
+
+/// "4.3 字/秒" or "4.3 syl/s (≈ 170 wpm)"
+func paceLabel(_ r: Double) -> String {
+    T(String(format: "%.1f 字/秒", r), String(format: "%.1f syl/s (≈ %d wpm)", r, Int(r * 60 / 1.5)))
 }
